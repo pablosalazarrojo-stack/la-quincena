@@ -203,6 +203,28 @@ textarea{min-height:76px;resize:vertical}
 .del.arm{border-color:var(--tomato);background:var(--tomato);color:#FFF4EE}
 .err{color:var(--tomato);font-size:14px;min-height:1em}
 
+.hint{font-size:14px;color:var(--muted)}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:4px}
+.tabs button{border:none;background:transparent;border-radius:999px;padding:9px 0;font-size:16px;font-weight:600}
+.tabs button[aria-pressed=true]{background:var(--lemon);color:var(--onColor)}
+.row2.one{grid-template-columns:minmax(0,1fr)}
+.h3{font-size:18px;font-weight:600;margin-top:6px}
+.pgrp{display:flex;flex-direction:column;gap:10px}
+.prow{background:var(--card);border:2px solid var(--line);border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.prow .nm2{font-size:17px;font-weight:600}
+.pin{width:100%;min-width:0;font-family:inherit;font-size:16px;padding:9px 12px;border-radius:12px;border:2px solid var(--line);background:var(--bg);color:var(--fg)}
+.pin:focus{border-color:var(--fg);outline:none}
+.pin.nm{font-weight:600;font-size:17px}
+.pq{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:end}
+.pq label{font-size:12px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;display:flex;flex-direction:column;gap:4px;min-width:0}
+.pq .tot{font-size:13px;color:var(--muted);padding-bottom:11px;white-space:nowrap}
+.pmeta{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.chk{display:flex;align-items:center;gap:6px;font-size:15px}
+.chk input{width:18px;height:18px;accent-color:var(--basil)}
+.del.sm{padding:6px 12px;font-size:13px}
+.add{border:2px dashed var(--line);background:transparent;border-radius:18px;padding:14px;font-size:16px;font-weight:600;color:var(--fg);width:100%}
+.pbar{position:sticky;bottom:calc(env(safe-area-inset-bottom,0px) + 10px);display:flex;gap:10px;align-items:center;background:var(--bg);padding-block:8px;z-index:5}
+.pbar .save{flex:1}
 .lock{max-width:440px;margin:10vh auto 0;display:flex;flex-direction:column;gap:14px}
 .lock form{display:flex;flex-direction:column;gap:10px}
 .lock input{width:100%;font-family:inherit;font-size:17px;padding:12px 14px;border-radius:16px;border:2px solid var(--line);background:var(--card);color:var(--fg)}
@@ -222,8 +244,14 @@ textarea{min-height:76px;resize:vertical}
     </div>
   </header>
 
+  <div class="tabs" role="group" aria-label="Sección">
+    <button id="t-gastos" data-p="gastos" aria-pressed="true">Mis gastos</button>
+    <button id="t-pres" data-p="presupuesto" aria-pressed="false">Presupuesto</button>
+  </div>
+
   <div id="banner" class="banner" hidden></div>
 
+  <div id="pGastos" class="wrap">
   <div class="seg" role="group" aria-label="Periodo">
     <button id="v-q1" data-v="q1" aria-pressed="false">Quincena 1<small>1 al 15</small></button>
     <button id="v-q2" data-v="q2" aria-pressed="false">Quincena 2<small id="q2days">16 al 30</small></button>
@@ -247,6 +275,19 @@ textarea{min-height:76px;resize:vertical}
   <section class="blk">
     <h2 id="movTitle">Movimientos</h2>
     <div id="list" class="list"></div>
+  </section>
+  </div>
+
+  <section id="pPres" class="blk" hidden>
+    <h2>Presupuesto por quincena</h2>
+    <p class="hint">Cambia los montos de cada quincena o agrega rubros. Los cambios aplican a todos los meses.</p>
+    <div class="tablewrap"><table id="pSum"></table></div>
+    <h3 class="h3">Ingresos</h3><div id="pIng" class="pgrp"></div>
+    <h3 class="h3">Rubros</h3><div id="pRub" class="pgrp"></div>
+    <button type="button" id="pAdd" class="add">+ Agregar rubro</button>
+    <h3 class="h3">Pensión y caja de ahorro</h3><div id="pFix" class="pgrp"></div>
+    <p id="pErr" class="err" role="alert"></p>
+    <div class="pbar"><button id="pSave" class="save" type="button">Guardar presupuesto</button><button id="pUndo" class="del" type="button">Descartar</button></div>
   </section>
 </div>
 
@@ -275,9 +316,9 @@ textarea{min-height:76px;resize:vertical}
       <span class="lab" id="fSubsLab">¿Dónde?</span>
       <div id="fSubs" class="pick sub" role="group" aria-labelledby="fSubsLab"></div>
     </div>
-    <div class="row2">
+    <div class="row2" id="fRow2">
       <div><label class="lab" for="fFecha">Fecha</label><input type="date" id="fFecha"></div>
-      <div><span class="lab">Cuenta en</span>
+      <div id="fQWrap"><span class="lab">Cuenta en</span>
         <div class="qpick" role="group" aria-label="Quincena">
           <button type="button" id="fQ1" data-q="1" aria-pressed="false">Q1</button>
           <button type="button" id="fQ2" data-q="2" aria-pressed="false">Q2</button>
@@ -289,6 +330,17 @@ textarea{min-height:76px;resize:vertical}
     <button type="submit" id="fSave" class="save">Anotar gasto</button>
     <div id="fDelRow" class="row" hidden><button type="button" id="fDel" class="del">Borrar este gasto</button></div>
   </form>
+</div>
+
+<div id="pagoSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="pgTitle" hidden>
+  <div class="in">
+    <div class="hd"><h2 id="pgTitle">¿Cuándo te pagan?</h2><button type="button" class="x" id="pgClose">Cerrar</button></div>
+    <p class="hint" id="pgHint"></p>
+    <div><label class="lab" for="pgFecha">Fecha de tu siguiente pago</label><input type="date" id="pgFecha"></div>
+    <p id="pgErr" class="err" role="alert"></p>
+    <button type="button" id="pgSave" class="save">Guardar fecha</button>
+    <div id="pgDelRow"><button type="button" id="pgDel" class="del">Quitar la fecha</button></div>
+  </div>
 </div>
 
 <div id="toast" class="toast" role="status" hidden></div>
@@ -312,6 +364,9 @@ function hoy(){var d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)+"
 function qDe(f){return +f.slice(8,10)<=15?1:2}
 function diasMes(ym){return new Date(+ym.slice(0,4),+ym.slice(5,7),0).getDate()}
 function mover(ym,d){var y=+ym.slice(0,4),m=+ym.slice(5,7)-1+d;y+=Math.floor(m/12);m=((m%12)+12)%12;return y+"-"+pad(m+1)}
+function diasEntre(a,b){return Math.round((Date.UTC(+b.slice(0,4),+b.slice(5,7)-1,+b.slice(8,10))-Date.UTC(+a.slice(0,4),+a.slice(5,7)-1,+a.slice(8,10)))/864e5)}
+function fechaCorta(f){return (+f.slice(8,10))+" "+MES3[+f.slice(5,7)-1]}
+function escA(s){return esc(s).replace(/"/g,"&quot;")}
 function $$(n){var a=Math.round(Math.abs(n));return (n<-0.5?"−":"")+"$"+a.toLocaleString("es-MX")}
 function esc(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML}
 function el(id){return document.getElementById(id)}
@@ -322,7 +377,7 @@ function activa(ym,q){var d=CFG.desde||DEF.desde;return ym>d.mes||(ym===d.mes&&q
 function qValida(ym,q){return activa(ym,q)?q:(q===1?2:1)}
 function planDe(k,q,ym){if(!activa(ym,q))return 0;if(k==="pension")return CFG.pension["q"+q];var r=rubroDe(k);return r?(r["q"+q]||0):0}
 
-var S = { mes: hoy().slice(0,7), vista: "q"+qDe(hoy()), gastos: [], cargando: true, db: null, sinDb: false, unsub: null, timer: null, tok: 0, k: "" };
+var S = { mes: hoy().slice(0,7), vista: "q"+qDe(hoy()), gastos: [], cargando: true, db: null, sinDb: false, unsub: null, timer: null, tok: 0, k: "", pagos: {}, filas: [], pag: "gastos" };
 try{ var v=localStorage.getItem("quincena.vista"); if(v==="mes") S.vista="mes"; }catch(e){}
 
 /* ---------- cálculos ---------- */
@@ -374,9 +429,14 @@ function render(){
   var fin=S.vista==="q1"?15:dm, ini=(S.vista==="q2"&&a1)?16:1;
   var chips=[];
   if(esMesActual && dHoy>=ini && dHoy<=fin){
-    var dr=fin-dHoy+1, libre=Math.max(0,V.diaPlan-V.diaGas);
-    chips.push('<span class="chip">Faltan '+dr+(dr===1?" día":" días")+'</span>');
-    chips.push('<span class="chip">Día a día: '+$$(libre)+' · '+$$(libre/dr)+' por día</span>');
+    if(S.vista==="mes"){
+      var dm2=fin-dHoy+1; chips.push('<span class="chip">Faltan '+dm2+(dm2===1?" día":" días")+' del mes</span>');
+    } else {
+      var qn0=S.vista==="q1"?1:2, pf=S.pagos[ym+"-"+qn0], lbl0;
+      if(pf){var dd=diasEntre(hoyS,pf);lbl0=dd>1?"Faltan "+dd+" días para tu pago ("+fechaCorta(pf)+")":dd===1?"Mañana es tu pago ("+fechaCorta(pf)+")":dd===0?"Hoy es tu pago":"Tu pago fue el "+fechaCorta(pf)}
+      else {var dr=fin-dHoy+1;lbl0="Faltan "+dr+(dr===1?" día":" días")+" · pon la fecha de tu pago"}
+      chips.push('<button type="button" class="chip pbtn" data-pago="'+qn0+'">'+lbl0+' ✎</button>');
+    }
   } else if(esMesActual && dHoy<ini){
     chips.push('<span class="chip">Empieza el día '+ini+'</span>');
   } else if(ym<hoyS.slice(0,7) || (esMesActual && dHoy>fin)){
@@ -484,9 +544,10 @@ function renderLista(){
 
 /* ---------- datos: hoja de Google privada (Apps Script, con clave) ---------- */
 function norm(x){var o=Object.assign({},x);o.q=+o.q===1?1:2;o.monto=+o.monto||0;return o}
-function guardarCache(){try{localStorage.setItem("quincena.cfg",JSON.stringify(CFG));localStorage.setItem("quincena.m."+S.mes,JSON.stringify(S.gastos))}catch(e){}}
+function guardarCache(){try{localStorage.setItem("quincena.cfg",JSON.stringify(CFG));localStorage.setItem("quincena.filas",JSON.stringify(S.filas));localStorage.setItem("quincena.pagos",JSON.stringify(S.pagos));localStorage.setItem("quincena.m."+S.mes,JSON.stringify(S.gastos))}catch(e){}}
 function leerCache(){
   try{var c=JSON.parse(localStorage.getItem("quincena.cfg")||"null");if(c&&c.rubros)CFG=c}catch(e){}
+  try{S.filas=JSON.parse(localStorage.getItem("quincena.filas")||"[]")||[];S.pagos=JSON.parse(localStorage.getItem("quincena.pagos")||"{}")||{}}catch(e){}
   try{S.gastos=(JSON.parse(localStorage.getItem("quincena.m."+S.mes)||"[]")||[]).map(norm)}catch(e){S.gastos=[]}
 }
 function api(body){
@@ -501,7 +562,9 @@ function suscribir(){
   api({action:"load",mes:mes}).then(function(o){
     if(tk!==S.tok)return;
     if(o.cfg&&o.cfg.rubros)CFG=o.cfg;
+    if(o.filas)S.filas=o.filas; if(o.pagos)S.pagos=o.pagos;
     S.gastos=(o.gastos||[]).map(norm); S.cargando=false; ocultarBanner(); guardarCache(); render();
+    if(!Edirty)cargarEditor();
   }).catch(function(e){
     if(tk!==S.tok)return;
     S.cargando=false;
@@ -518,7 +581,7 @@ function iniciar(){
   if(m){S.k=decodeURIComponent(m[1]);try{localStorage.setItem("quincena.k",S.k)}catch(e){}}
   if(!S.k){try{S.k=localStorage.getItem("quincena.k")||""}catch(e){}}
   if(!S.k){bloquear("");return}
-  el("lock").hidden=true; el("app").hidden=false; el("fab").hidden=false;
+  el("lock").hidden=true; el("app").hidden=false; el("fab").hidden=S.pag!=="gastos";
   suscribir();
 }
 el("lockForm").addEventListener("submit",function(e){
@@ -562,6 +625,7 @@ function abrir(g,rubro){
   F.rubro=g?g.rubro:(rubro||null); F.sub=g?(g.sub||null):null;
   var f=g?g.fecha:defaultFecha();
   el("fFecha").value=f; F.q=g?g.q:qValida(f.slice(0,7),S.vista==="q1"?1:S.vista==="q2"?2:qDe(f));
+  S.qFija=S.vista!=="mes"; el("fQWrap").hidden=S.qFija; el("fRow2").className="row2"+(S.qFija?" one":"");
   el("fMonto").value=g?String(g.monto):"";
   el("fNota").value=g?(g.nota||""):"";
   el("shTitle").textContent=g?"Editar gasto":"Nuevo gasto";
@@ -577,7 +641,7 @@ function defaultFecha(){
   if(h.slice(0,7)===S.mes) return h;
   return S.mes+(S.vista==="q2"?"-16":"-01");
 }
-function cerrar(){el("scrim").hidden=true;el("sheet").hidden=true;el("fab").hidden=false}
+function cerrar(){el("scrim").hidden=true;el("sheet").hidden=true;el("pagoSheet").hidden=true;el("fab").hidden=S.pag!=="gastos"}
 var armado=null;
 function desarmar(){var b=el("fDel");b.classList.remove("arm");b.textContent="Borrar este gasto";clearTimeout(armado)}
 
@@ -585,10 +649,10 @@ el("fRubros").addEventListener("click",function(e){var b=e.target.closest("butto
 el("fSubs").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;var s=b.getAttribute("data-s");F.sub=(F.sub===s)?null:s;pintarRubros()});
 el("fQ1").onclick=function(){F.q=1;pintarQ()};
 el("fQ2").onclick=function(){F.q=2;pintarQ()};
-el("fFecha").addEventListener("change",function(){var v=el("fFecha").value;if(v){F.q=qValida(v.slice(0,7),qDe(v));pintarQ()}});
+el("fFecha").addEventListener("change",function(){var v=el("fFecha").value;if(v){if(!S.qFija)F.q=qValida(v.slice(0,7),qDe(v));pintarQ()}});
 el("fMonto").addEventListener("input",pintarSaldo);
 el("shClose").onclick=cerrar; el("scrim").onclick=cerrar;
-document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!el("sheet").hidden)cerrar()});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&(!el("sheet").hidden||!el("pagoSheet").hidden))cerrar()});
 el("fab").onclick=function(){abrir(null)};
 el("cats").addEventListener("click",function(e){var b=e.target.closest(".cat");if(b)abrir(null,b.getAttribute("data-r"))});
 el("list").addEventListener("click",function(e){
@@ -647,7 +711,125 @@ function pensionToggle(qn){
     .then(function(){toast("Pensión de la Q"+qn+" de vuelta a «por pagar»")},function(){toast("No se pudo desmarcar. Intenta otra vez.")})
     .then(function(){S.pensBusy=false;render()});
 }
-el("hero").addEventListener("click",function(e){var b=e.target.closest("[data-pq]");if(b)pensionToggle(+b.getAttribute("data-pq"))});
+el("hero").addEventListener("click",function(e){
+  var b=e.target.closest("[data-pq]");if(b){pensionToggle(+b.getAttribute("data-pq"));return}
+  var p=e.target.closest("[data-pago]");if(p)abrirPago(+p.getAttribute("data-pago"));
+});
+
+/* ---------- fecha del siguiente pago (días exactos) ---------- */
+var PG={clave:null};
+function abrirPago(qn){
+  var ym=S.mes, k=ym+"-"+qn, f=S.pagos[k];
+  PG.clave=k;
+  el("pgHint").textContent="Quincena "+qn+" de "+MESES[+ym.slice(5,7)-1]+". Con la fecha de tu pago cuento los días exactos que tiene que durar tu dinero.";
+  el("pgFecha").value=f||(qn===1?ym+"-15":ym+"-"+pad(diasMes(ym)));
+  el("pgDelRow").hidden=!f; el("pgErr").textContent=""; el("pgSave").disabled=false; el("pgSave").textContent="Guardar fecha";
+  el("scrim").hidden=false; el("pagoSheet").hidden=false; el("fab").hidden=true;
+}
+function guardarPagoFecha(fecha){
+  el("pgSave").disabled=true; el("pgSave").textContent="Guardando…";
+  api({action:"pago",clave:PG.clave,fecha:fecha}).then(function(o){
+    S.pagos=o.pagos||{}; guardarCache(); cerrar(); render();
+    toast(fecha?"Tu pago: "+fechaCorta(fecha):"Fecha de pago quitada");
+  }).catch(function(){
+    el("pgSave").disabled=false; el("pgSave").textContent="Guardar fecha";
+    el("pgErr").textContent="No se guardó. Revisa tu conexión y vuelve a tocar el botón.";
+  });
+}
+el("pgSave").onclick=function(){var v=el("pgFecha").value;if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){el("pgErr").textContent="Elige la fecha de tu pago.";return}guardarPagoFecha(v)};
+el("pgDel").onclick=function(){guardarPagoFecha("")};
+el("pgClose").onclick=cerrar;
+
+/* ---------- sección Presupuesto (editar montos y agregar rubros) ---------- */
+var E=null, Edirty=false;
+function cargarEditor(){E=(S.filas||[]).map(function(r){return r.slice()});Edirty=false;if(S.pag==="presupuesto")pintarEditor()}
+function numIn(i,f,v){return '<input class="pin num" inputmode="numeric" data-i="'+i+'" data-f="'+f+'" value="'+(+v?Math.round(+v):"")+'" placeholder="0" aria-label="'+(f===3?"Quincena 1":"Quincena 2")+'">'}
+function pintarEditor(){
+  if(!E)E=[];
+  var ing="",rub="",fix="";
+  E.forEach(function(r,i){
+    var qs='<div class="pq"><label>Q1'+numIn(i,3,r[3])+'</label><label>Q2'+numIn(i,4,r[4])+'</label><span class="tot num" id="pt'+i+'">'+$$((+r[3]||0)+(+r[4]||0))+' al mes</span></div>';
+    if(r[0]==="rubro"){
+      rub+='<div class="prow"><input class="pin nm" data-i="'+i+'" data-f="2" value="'+escA(r[2])+'" placeholder="Nombre del rubro" aria-label="Nombre del rubro">'+qs+
+        '<input class="pin" data-i="'+i+'" data-f="6" value="'+escA(r[6])+'" placeholder="Subcategorías (opcional): Costco, Soriana" aria-label="Subcategorías">'+
+        '<div class="pmeta"><label class="chk"><input type="checkbox" data-i="'+i+'" data-f="5"'+(r[5]?" checked":"")+'> Pago fijo</label>'+
+        (r[1]==="otros"?'':'<button type="button" class="del sm" data-quitar="'+i+'">Quitar</button>')+'</div></div>';
+    } else {
+      var box='<div class="prow"><div class="nm2">'+esc(r[2])+'</div>'+qs+'</div>';
+      if(r[0]==="ingreso")ing+=box; else fix+=box;
+    }
+  });
+  el("pIng").innerHTML=ing||'<p class="hint">Cargando…</p>'; el("pRub").innerHTML=rub; el("pFix").innerHTML=fix;
+  el("pErr").textContent=""; pintarSuma();
+}
+function sumaE(c){
+  var o={ing:0,gas:0,pen:0,caj:0};
+  (E||[]).forEach(function(r){var v=+r[c]||0;if(r[0]==="ingreso")o.ing+=v;else if(r[0]==="rubro")o.gas+=v;else if(r[0]==="pension")o.pen+=v;else if(r[0]==="caja")o.caj+=v});
+  o.rest=o.ing-o.gas; o.ah=o.rest-o.pen; o.liq=o.ah-o.caj; return o;
+}
+function pintarSuma(){
+  var a=sumaE(3), b=sumaE(4), m={}; ["ing","gas","rest","pen","ah","caj","liq"].forEach(function(k){m[k]=a[k]+b[k]});
+  var F2=[["Ingreso","ing"],["Gastos","gas"],["Restante","rest"],["Pensión","pen"],["Ahorro","ah"],["Caja de ahorro","caj"],["Ahorro líquido","liq"]];
+  var t='<thead><tr><th></th><th class="g">Quincena 1</th><th class="g">Quincena 2</th><th class="g">Mes</th></tr></thead><tbody>';
+  F2.forEach(function(f){
+    var tot=f[1]==="ah"||f[1]==="liq";
+    t+='<tr'+(tot?' class="tot"':'')+'><td>'+f[0]+'</td>'+[a,b,m].map(function(x){var v=x[f[1]];return cel($$(v),"g"+(tot?(v<-0.5?" bad":" ok"):""))}).join("")+'</tr>';
+  });
+  el("pSum").innerHTML=t+'</tbody>';
+  el("pSave").disabled=!Edirty; el("pUndo").hidden=!Edirty;
+}
+function editarCampo(t){
+  var i=t.getAttribute("data-i");if(i===null||!E)return;i=+i;var f=+t.getAttribute("data-f");
+  if(f===5)E[i][5]=t.checked?"sí":"";
+  else if(f===3||f===4){E[i][f]=Math.max(0,Math.round(+String(t.value).replace(/[^\d.]/g,"")||0));var pt=el("pt"+i);if(pt)pt.textContent=$$((+E[i][3]||0)+(+E[i][4]||0))+" al mes"}
+  else E[i][f]=t.value;
+  Edirty=true; pintarSuma();
+}
+el("pPres").addEventListener("input",function(e){editarCampo(e.target)});
+el("pPres").addEventListener("change",function(e){if(e.target.type==="checkbox")editarCampo(e.target)});
+el("pPres").addEventListener("click",function(e){
+  var q=e.target.closest("[data-quitar]");if(!q)return;
+  E.splice(+q.getAttribute("data-quitar"),1);Edirty=true;pintarEditor();
+});
+el("pAdd").onclick=function(){
+  var last=-1;E.forEach(function(r,i){if(r[0]==="rubro")last=i});
+  E.splice(last+1,0,["rubro","","",0,0,"",""]);Edirty=true;pintarEditor();
+  var ins=el("pRub").querySelectorAll(".pin.nm");if(ins.length)ins[ins.length-1].focus();
+};
+el("pUndo").onclick=function(){cargarEditor();pintarEditor();toast("Cambios descartados")};
+function slug(s){var b=String(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"").slice(0,20);return b.length>=2?b:"rubro"}
+el("pSave").onclick=function(){
+  var keys={},err="";
+  E.forEach(function(r){if(r[0]==="rubro"&&r[1])keys[r[1]]=1});
+  var filas=E.map(function(r){
+    r=r.slice(); r[2]=String(r[2]||"").trim();
+    if(r[0]==="rubro"){
+      if(!r[2])err="Ponle nombre a cada rubro, o quita el que no uses.";
+      if(!r[1]){var b=slug(r[2]),k=b,n=2;while(keys[k]){k=b+n;n++}keys[k]=1;r[1]=k}
+    }
+    r[3]=Math.round(+r[3]||0); r[4]=Math.round(+r[4]||0); r[5]=r[5]?"sí":""; r[6]=String(r[6]||"").trim();
+    return r;
+  });
+  if(err){el("pErr").textContent=err;return}
+  el("pSave").disabled=true; el("pSave").textContent="Guardando…";
+  api({action:"savePresupuesto",filas:filas}).then(function(o){
+    if(o.cfg)CFG=o.cfg; if(o.filas)S.filas=o.filas;
+    guardarCache(); cargarEditor(); render(); toast("Presupuesto guardado");
+  }).catch(function(e){
+    el("pErr").textContent=e&&e.message&&e.code!=="clave"?"No se guardó: "+e.message:"No se guardó. Revisa tu conexión y vuelve a tocar el botón.";
+  }).then(function(){el("pSave").textContent="Guardar presupuesto";pintarSuma()});
+};
+function irA(p){
+  S.pag=p;
+  el("t-gastos").setAttribute("aria-pressed",String(p==="gastos"));el("t-pres").setAttribute("aria-pressed",String(p!=="gastos"));
+  el("pGastos").hidden=p!=="gastos"; el("pPres").hidden=p==="gastos";
+  document.querySelector(".monthnav").style.visibility=p==="gastos"?"":"hidden";
+  el("fab").hidden=p!=="gastos";
+  if(p!=="gastos"){if(!E||!Edirty)cargarEditor();pintarEditor()}
+  window.scrollTo(0,0);
+}
+el("t-gastos").onclick=function(){irA("gastos")};
+el("t-pres").onclick=function(){irA("presupuesto")};
 
 var tt=null;
 function toast(t){var x=el("toast");x.textContent=t;x.hidden=false;clearTimeout(tt);tt=setTimeout(function(){x.hidden=true},2600)}

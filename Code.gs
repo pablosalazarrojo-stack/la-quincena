@@ -5,13 +5,13 @@
  *
  * Instalación (una sola vez):
  *  1. script.google.com → Proyecto nuevo → pegar este archivo.
- *  2. Poner los montos en PRESUPUESTO y ejecutar `setup`: crea la hoja, genera una clave al azar
+ *  2. Poner los montos en PRESUPUESTO y ejecutar «setup»: crea la hoja, genera una clave al azar
  *     y deja tu enlace personal (con la clave) en la pestaña «Tu enlace».
  *  3. Implementar → Nueva implementación → Aplicación web
  *     · Ejecutar como: yo   · Quién tiene acceso: cualquier persona
  *  4. Pegar la URL que termina en /exec en API_URL de index.html.
  * Después, el presupuesto se cambia directo en la pestaña «Presupuesto» de la hoja.
- * Para cambiar la clave: borrar la propiedad CLAVE del script y volver a ejecutar `setup`.
+ * Para cambiar la clave: borrar la propiedad CLAVE del script y volver a ejecutar «setup».
  */
 
 const APP_URL = "https://pablosalazarrojo-stack.github.io/la-quincena/";
@@ -87,7 +87,9 @@ function doPost(e) {
     const d = JSON.parse(e.postData.contents);
     checar(d.k);
     switch (d.action) {
-      case "load": out = { ok: true, cfg: presupuesto(), gastos: leer(String(d.mes || "")) }; break;
+      case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), gastos: leer(String(d.mes || "")) }; break; }
+      case "savePresupuesto": { guardarPresupuesto(d.filas); const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f }; break; }
+      case "pago": guardarPago(String(d.clave || ""), String(d.fecha || "")); out = { ok: true, pagos: pagos() }; break;
       case "add": out = { ok: true, id: agregar(d.doc) }; break;
       case "save": guardar(String(d.id || ""), d.doc); out = { ok: true }; break;
       case "del": borrar(d.ids); out = { ok: true }; break;
@@ -183,21 +185,74 @@ function borrar(ids) {
   });
 }
 
-function presupuesto() {
+/* Las filas de la pestaña «Presupuesto», limpias: [tipo, clave, nombre, q1, q2, fijo, subcategorias]. */
+function filasP() {
   const sh = libro().getSheetByName(HOJA_P);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues()
+    .filter(function (r) { return String(r[0]).trim() && String(r[1]).trim(); })
+    .map(function (r) {
+      return [sinAcentos(r[0]).trim().toLowerCase(), sinAcentos(r[1]).trim().toLowerCase(), String(r[2]).trim(),
+        Number(r[3]) || 0, Number(r[4]) || 0, /^(si|x|1|true)$/i.test(sinAcentos(r[5]).trim()) ? "sí" : "", String(r[6] || "").trim()];
+    });
+}
+
+function cfgDe(filas) {
   const cfg = { ingreso: { q1: [], q2: [] }, pension: { q1: 0, q2: 0 }, caja: { q1: 0, q2: 0 }, rubros: [] };
-  if (!sh || sh.getLastRow() < 2) return cfg;
-  sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues().forEach(function (r) {
-    const t = sinAcentos(r[0]).trim().toLowerCase(), k = sinAcentos(r[1]).trim().toLowerCase(), n = String(r[2]).trim();
-    const a = Number(r[3]) || 0, b = Number(r[4]) || 0;
+  filas.forEach(function (r) {
+    const t = r[0], k = r[1], n = r[2], a = r[3], b = r[4];
     if (t === "ingreso") { if (a) cfg.ingreso.q1.push([n, a]); if (b) cfg.ingreso.q2.push([n, b]); }
     else if (t === "pension") cfg.pension = { q1: a, q2: b };
     else if (t === "caja") cfg.caja = { q1: a, q2: b };
     else if (t === "rubro" && /^[a-z0-9_-]{2,24}$/.test(k)) cfg.rubros.push({
-      k: k, n: n || k, q1: a, q2: b,
-      fijo: /^(si|x|1|true)$/i.test(sinAcentos(r[5]).trim()),
-      subs: String(r[6] || "").split(",").map(function (s) { return s.trim(); }).filter(String)
+      k: k, n: n || k, q1: a, q2: b, fijo: r[5] === "sí",
+      subs: String(r[6] || "").split(",").map(function (x) { return x.trim(); }).filter(String)
     });
   });
   return cfg;
+}
+
+function presupuesto() { return cfgDe(filasP()); }
+
+/* Reescribe la pestaña «Presupuesto» con lo que se editó en la app. */
+function guardarPresupuesto(filas) {
+  if (!Array.isArray(filas) || !filas.length || filas.length > 80) throw new Error("Presupuesto inválido.");
+  const vistos = {};
+  let pen = 0, caja = 0, otros = false;
+  const out = filas.map(function (r) {
+    r = r || [];
+    const t = String(r[0] || ""), k = String(r[1] || "");
+    if (["ingreso", "rubro", "pension", "caja"].indexOf(t) < 0) throw new Error("Tipo inválido.");
+    if (!/^[a-z0-9_-]{2,24}$/.test(k)) throw new Error("Clave inválida: " + k);
+    if (vistos[t + "/" + k]) throw new Error("Rubro repetido: " + k);
+    vistos[t + "/" + k] = 1;
+    if (t === "pension") pen++;
+    if (t === "caja") caja++;
+    if (t === "rubro" && k === "otros") otros = true;
+    const n = limpio(r[2], 40) || k;
+    const a = Math.round(Number(r[3]) || 0), b = Math.round(Number(r[4]) || 0);
+    if (a < 0 || b < 0 || a > 9999999 || b > 9999999) throw new Error("Monto inválido en " + n + ".");
+    return [t, k, n, a, b, r[5] ? "sí" : "", limpio(r[6], 200)];
+  });
+  if (pen > 1 || caja > 1) throw new Error("Solo puede haber una pensión y una caja de ahorro.");
+  if (!otros) throw new Error("El rubro Otros no se puede quitar.");
+  conCandado(function () {
+    const sh = libro().getSheetByName(HOJA_P);
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 7).clearContent();
+    sh.getRange(2, 1, out.length, 7).setValues(out);
+  });
+}
+
+/* Fecha del siguiente pago de cada quincena, por ejemplo {"2026-11-2": "2026-11-28"}. */
+function pagos() {
+  try { return JSON.parse(props().getProperty("PAGOS") || "{}"); } catch (e) { return {}; }
+}
+function guardarPago(clave, fecha) {
+  if (!/^\d{4}-\d{2}-[12]$/.test(clave)) throw new Error("Quincena inválida.");
+  if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new Error("Fecha inválida.");
+  conCandado(function () {
+    const p = pagos();
+    if (fecha) p[clave] = fecha; else delete p[clave];
+    props().setProperty("PAGOS", JSON.stringify(p));
+  });
 }

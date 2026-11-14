@@ -37,6 +37,8 @@ const PRESUPUESTO = [
 
 const HOJA_G = "Gastos";
 const HOJA_P = "Presupuesto";
+const HOJA_C = "Cierre de año";
+const COLS_C = ["tabla", "seccion", "clave", "concepto", "presupuesto", "real"];
 const COLS = ["id", "fecha", "mes", "quincena", "rubro", "sub", "monto", "nota", "creado", "editado"];
 
 function props() { return PropertiesService.getScriptProperties(); }
@@ -87,8 +89,9 @@ function doPost(e) {
     const d = JSON.parse(e.postData.contents);
     checar(d.k);
     switch (d.action) {
-      case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), gastos: leer(String(d.mes || "")) }; break; }
+      case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), cierre: filasCierre(), gastos: leer(String(d.mes || "")) }; break; }
       case "savePresupuesto": { guardarPresupuesto(d.filas); const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f }; break; }
+      case "cierreReal": guardarRealCierre(String(d.clave || ""), d.real); out = { ok: true }; break;
       case "pago": guardarPago(String(d.clave || ""), String(d.fecha || "")); out = { ok: true, pagos: pagos() }; break;
       case "add": out = { ok: true, id: agregar(d.doc) }; break;
       case "save": guardar(String(d.id || ""), d.doc); out = { ok: true }; break;
@@ -254,5 +257,39 @@ function guardarPago(clave, fecha) {
     const p = pagos();
     if (fecha) p[clave] = fecha; else delete p[clave];
     props().setProperty("PAGOS", JSON.stringify(p));
+  });
+}
+
+/* Cierre de año: pestaña con [tabla, seccion, clave, concepto, presupuesto, real].
+   Tabla 1 = gastos de fin de año; tabla 2 = ingresos. El «real» se escribe desde la app. */
+function filasCierre() {
+  const sh = libro().getSheetByName(HOJA_C);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, COLS_C.length).getValues()
+    .filter(function (r) { return String(r[2]).trim(); })
+    .map(function (r) {
+      return {
+        tabla: Number(r[0]) === 2 ? 2 : 1, seccion: String(r[1]).trim(), clave: String(r[2]).trim(),
+        concepto: String(r[3]).trim(), presupuesto: Number(r[4]) || 0,
+        real: (r[5] === "" || r[5] === null) ? null : Number(r[5])
+      };
+    });
+}
+
+function guardarRealCierre(clave, real) {
+  if (!/^[a-z0-9_-]{2,30}$/.test(clave)) throw new Error("Concepto inválido.");
+  let v = "";
+  if (real !== "" && real !== null && real !== undefined) {
+    v = Math.round(Number(real) * 100) / 100;
+    if (!(v >= 0 && v < 100000000)) throw new Error("Monto inválido.");
+  }
+  conCandado(function () {
+    const sh = libro().getSheetByName(HOJA_C);
+    if (!sh || sh.getLastRow() < 2) throw new Error("Falta la pestaña «Cierre de año».");
+    const col = sh.getRange(2, 3, sh.getLastRow() - 1, 1).getValues();
+    for (let i = 0; i < col.length; i++) {
+      if (String(col[i][0]).trim() === clave) { sh.getRange(i + 2, 6).setValue(v); return; }
+    }
+    throw new Error("Ese concepto ya no existe.");
   });
 }

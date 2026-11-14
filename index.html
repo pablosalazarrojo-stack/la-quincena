@@ -204,7 +204,7 @@ textarea{min-height:76px;resize:vertical}
 .err{color:var(--tomato);font-size:14px;min-height:1em}
 
 .hint{font-size:14px;color:var(--muted)}
-.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:4px}
+.tabs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:4px}
 .tabs button{border:none;background:transparent;border-radius:999px;padding:9px 0;font-size:16px;font-weight:600}
 .tabs button[aria-pressed=true]{background:var(--lemon);color:var(--onColor)}
 .row2.one{grid-template-columns:minmax(0,1fr)}
@@ -229,6 +229,19 @@ html,body{overscroll-behavior-y:contain}
 .ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 10px);transform:translate(-50%,-60px);z-index:45;background:var(--fg);color:var(--bg);border-radius:999px;padding:8px 16px;font-size:14px;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.2);transition:transform .12s ease-out;white-space:nowrap}
 .ptr.listo{background:var(--lemon);color:var(--onColor)}
 @media (prefers-reduced-motion: reduce){.ptr{transition:none}}
+.mvhd{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.mvhd select{font-family:inherit;font-size:15px;font-weight:500;padding:8px 12px;border-radius:999px;border:2px solid var(--line);background:var(--card);color:var(--fg);max-width:100%}
+.pend{font-size:14px;background:var(--soft);border:2px dashed var(--line);border-radius:14px;padding:8px 12px}
+.ctab th,.ctab td{padding:8px 6px;font-size:13.5px}
+.ctab thead th{white-space:normal;letter-spacing:.02em;font-size:11px;vertical-align:bottom}
+.ctab th:first-child,.ctab td:first-child{white-space:normal;min-width:90px;max-width:130px;line-height:1.25}
+.ctab .corto{display:none}
+@media (max-width:440px){.ctab .largo{display:none}.ctab .corto{display:inline}.ctab th,.ctab td{padding:8px 4px}.ctab th:first-child,.ctab td:first-child{padding-left:10px}}
+.ctab td.real{padding:4px 4px}
+.cin{width:76px;font-family:inherit;font-size:15px;text-align:right;padding:6px 7px;border-radius:10px;border:2px solid var(--line);background:var(--bg);color:var(--fg);font-variant-numeric:tabular-nums}
+.cin:focus{border-color:var(--fg);outline:none}
+.ctab td.sub{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--soft)}
+.ctab tr.sub td:first-child{background:var(--soft)}
 .lock{max-width:440px;margin:10vh auto 0;display:flex;flex-direction:column;gap:14px}
 .lock form{display:flex;flex-direction:column;gap:10px}
 .lock input{width:100%;font-family:inherit;font-size:17px;padding:12px 14px;border-radius:16px;border:2px solid var(--line);background:var(--card);color:var(--fg)}
@@ -251,9 +264,11 @@ html,body{overscroll-behavior-y:contain}
   <div class="tabs" role="group" aria-label="Sección">
     <button id="t-gastos" data-p="gastos" aria-pressed="true">Mis gastos</button>
     <button id="t-pres" data-p="presupuesto" aria-pressed="false">Presupuesto</button>
+    <button id="t-cierre" data-p="cierre" aria-pressed="false">Cierre de año</button>
   </div>
 
   <div id="banner" class="banner" hidden></div>
+  <div id="pend" class="pend" role="status" hidden></div>
 
   <div id="pGastos" class="wrap">
   <div class="seg" role="group" aria-label="Periodo">
@@ -277,7 +292,7 @@ html,body{overscroll-behavior-y:contain}
   </section>
 
   <section class="blk">
-    <h2 id="movTitle">Movimientos</h2>
+    <div class="mvhd"><h2 id="movTitle">Movimientos</h2><select id="mvFiltro" aria-label="Filtrar movimientos por rubro"></select></div>
     <div id="list" class="list"></div>
   </section>
   </div>
@@ -292,6 +307,14 @@ html,body{overscroll-behavior-y:contain}
     <h3 class="h3">Pensión y caja de ahorro</h3><div id="pFix" class="pgrp"></div>
     <p id="pErr" class="err" role="alert"></p>
     <div class="pbar"><button id="pSave" class="save" type="button">Guardar presupuesto</button><button id="pUndo" class="del" type="button">Descartar</button></div>
+  </section>
+
+  <section id="pCierre" class="blk" hidden>
+    <h2>Cierre de año</h2>
+    <p class="hint">Escribe lo real conforme vaya pasando; se guarda solo. Diferencia = presupuesto − real: verde si es positiva, rojo si es negativa. En los totales, lo que todavía no escribes cuenta como 0.</p>
+    <div class="tablewrap"><table id="cT1" class="ctab"></table></div>
+    <div class="tablewrap"><table id="cT2" class="ctab"></table></div>
+    <p id="cErr" class="err" role="alert"></p>
   </section>
 </div>
 
@@ -381,7 +404,7 @@ function activa(ym,q){var d=CFG.desde||DEF.desde;return ym>d.mes||(ym===d.mes&&q
 function qValida(ym,q){return activa(ym,q)?q:(q===1?2:1)}
 function planDe(k,q,ym){if(!activa(ym,q))return 0;if(k==="pension")return CFG.pension["q"+q];var r=rubroDe(k);return r?(r["q"+q]||0):0}
 
-var S = { mes: hoy().slice(0,7), vista: "q"+qDe(hoy()), gastos: [], cargando: true, db: null, sinDb: false, unsub: null, timer: null, tok: 0, k: "", pagos: {}, filas: [], pag: "gastos" };
+var S = { mes: hoy().slice(0,7), vista: "q"+qDe(hoy()), gastos: [], cargando: true, db: null, sinDb: false, unsub: null, timer: null, tok: 0, k: "", pagos: {}, filas: [], pag: "gastos", syncGen: 0, filtro: "", cierre: [] };
 try{ var v=localStorage.getItem("quincena.vista"); if(v==="mes") S.vista="mes"; }catch(e){}
 
 /* ---------- cálculos ---------- */
@@ -546,12 +569,16 @@ function renderTabla(C){
 
 function renderLista(){
   var qs=S.vista==="mes"?null:(S.vista==="q1"?1:2);
-  var xs=S.gastos.filter(function(x){return qs===null||x.q===qs}).slice().sort(function(a,b){
+  var fsel=el("mvFiltro"), opts=[["","Todos los rubros"]].concat(ordenar(CFG.rubros,function(r){return r.k}).map(function(r){return [r.k,r.n]})).concat([["pension","Pensión"]]);
+  if(S.filtro&&!opts.some(function(o){return o[0]===S.filtro}))S.filtro="";
+  fsel.innerHTML=opts.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===(S.filtro||"")?" selected":"")+'>'+esc(o[1])+'</option>'}).join("");
+  var xs=S.gastos.filter(function(x){return (qs===null||x.q===qs)&&(!S.filtro||x.rubro===S.filtro)}).slice().sort(function(a,b){
     return a.fecha<b.fecha?1:a.fecha>b.fecha?-1:(String(b.creado||"")>String(a.creado||"")?1:-1);
   });
   el("movTitle").textContent="Movimientos"+(xs.length?" ("+xs.length+")":"");
   var L=el("list");
   if(S.cargando&&!xs.length){L.innerHTML='<div class="empty">Trayendo tus gastos…</div>';return}
+  if(!xs.length&&S.filtro){L.innerHTML='<div class="empty">No hay movimientos de este rubro en este periodo.</div>';return}
   if(!xs.length){L.innerHTML='<div class="empty">Todavía no hay gastos en este periodo. Toca un rubro de arriba para anotar el primero; tarda cinco segundos.</div>';return}
   L.innerHTML=xs.map(function(x){
     var r=rubroDe(x.rubro)||{n:x.rubro}, mi=+x.fecha.slice(5,7)-1;
@@ -564,32 +591,34 @@ function renderLista(){
 
 /* ---------- datos: hoja de Google privada (Apps Script, con clave) ---------- */
 function norm(x){var o=Object.assign({},x);o.q=+o.q===1?1:2;o.monto=+o.monto||0;return o}
-function guardarCache(){try{localStorage.setItem("quincena.cfg",JSON.stringify(CFG));localStorage.setItem("quincena.filas",JSON.stringify(S.filas));localStorage.setItem("quincena.pagos",JSON.stringify(S.pagos));localStorage.setItem("quincena.m."+S.mes,JSON.stringify(S.gastos))}catch(e){}}
+function guardarCache(){try{localStorage.setItem("quincena.cfg",JSON.stringify(CFG));localStorage.setItem("quincena.filas",JSON.stringify(S.filas));localStorage.setItem("quincena.pagos",JSON.stringify(S.pagos));localStorage.setItem("quincena.cierre",JSON.stringify(S.cierre||[]));localStorage.setItem("quincena.m."+S.mes,JSON.stringify(S.gastos))}catch(e){}}
 function leerCache(){
   try{var c=JSON.parse(localStorage.getItem("quincena.cfg")||"null");if(c&&c.rubros)CFG=c}catch(e){}
-  try{S.filas=JSON.parse(localStorage.getItem("quincena.filas")||"[]")||[];S.pagos=JSON.parse(localStorage.getItem("quincena.pagos")||"{}")||{}}catch(e){}
+  try{S.filas=JSON.parse(localStorage.getItem("quincena.filas")||"[]")||[];S.pagos=JSON.parse(localStorage.getItem("quincena.pagos")||"{}")||{};S.cierre=JSON.parse(localStorage.getItem("quincena.cierre")||"[]")||[]}catch(e){}
   try{S.gastos=(JSON.parse(localStorage.getItem("quincena.m."+S.mes)||"[]")||[]).map(norm)}catch(e){S.gastos=[]}
 }
 function api(body){
   body.k=S.k;
   return fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body)})
     .then(function(r){return r.json()})
-    .then(function(o){if(!o||!o.ok){var e=new Error((o&&o.error)||"Error");e.code=o&&o.code;throw e}return o});
+    .then(function(o){if(!o||!o.ok){var e=new Error((o&&o.error)||"Error");e.code=o&&o.code;e.servidor=true;throw e}return o});
 }
 function suscribir(){
-  var mes=S.mes, tk=++S.tok;
-  S.cargando=true; leerCache(); render();
+  var mes=S.mes, tk=++S.tok, gen=S.syncGen;
+  S.cargando=true; leerCache(); S.gastos=aplicarCola(S.gastos); render();
   api({action:"load",mes:mes}).then(function(o){
     if(tk!==S.tok)return;
+    if(gen!==S.syncGen){suscribir();return} /* se guardó algo mientras cargaba: vuelve a leer */
     if(o.cfg&&o.cfg.rubros)CFG=o.cfg;
-    if(o.filas)S.filas=o.filas; if(o.pagos)S.pagos=o.pagos;
-    S.gastos=(o.gastos||[]).map(norm); S.cargando=false; ocultarBanner(); guardarCache(); render();
+    if(o.filas)S.filas=o.filas; if(o.pagos)S.pagos=o.pagos; if(o.cierre)S.cierre=o.cierre;
+    S.gastos=aplicarCola((o.gastos||[]).map(norm)); S.cargando=false; ocultarBanner(); guardarCache(); render();
+    if(S.pag==="cierre"&&!S.cEditando)pintarCierre();
     if(!Edirty)cargarEditor();
   }).catch(function(e){
     if(tk!==S.tok)return;
     S.cargando=false;
     if(e.code==="clave"){try{localStorage.removeItem("quincena.k")}catch(err){}S.k="";bloquear("Esa clave no funcionó. Abre la app con tu enlace personal.");return}
-    mostrarBanner("No pude traer tus datos (¿sin internet?). Te muestro lo último que vi en este teléfono; no anotes hasta que regrese la conexión.");
+    mostrarBanner("No pude traer tus datos (¿sin internet?). Te muestro lo último que vi en este teléfono. Lo que anotes se guarda cuando regrese la conexión.");
     render();
   });
 }
@@ -602,8 +631,84 @@ function iniciar(){
   if(!S.k){try{S.k=localStorage.getItem("quincena.k")||""}catch(e){}}
   if(!S.k){bloquear("");return}
   el("lock").hidden=true; el("app").hidden=false;
-  suscribir();
+  suscribir(); sincronizar();
 }
+
+/* ---------- guardado instantáneo: se anota al momento y se sube a la hoja por detrás ---------- */
+var COLA=[], MAPA={}, SYNC={activo:false,t:null,fallo:false};
+try{COLA=JSON.parse(localStorage.getItem("quincena.cola")||"[]")||[];MAPA=JSON.parse(localStorage.getItem("quincena.mapa")||"{}")||{}}catch(e){COLA=[];MAPA={}}
+COLA.forEach(function(o){o.enviando=false});
+function guardarCola(){try{localStorage.setItem("quincena.cola",JSON.stringify(COLA));localStorage.setItem("quincena.mapa",JSON.stringify(MAPA))}catch(e){}}
+function tmpId(){return "tmp"+Date.now().toString(36)+Math.floor(Math.random()*1e5).toString(36)}
+function esTmp(id){return String(id).slice(0,3)==="tmp"}
+function sinId(d){var o=Object.assign({},d);delete o.id;return o}
+function aplicarCola(list){
+  list=list.slice();
+  COLA.forEach(function(op){
+    if(op.op==="add"||op.op==="save"){
+      var id=op.op==="add"?(MAPA[op.tmp]||op.tmp):(MAPA[op.id]||op.id);
+      list=list.filter(function(x){return x.id!==id&&x.id!==op.tmp&&x.id!==op.id});
+      if(op.doc.mes===S.mes){var d=Object.assign({},op.doc);d.id=id;list.push(norm(d))}
+    } else if(op.op==="del"){
+      list=list.filter(function(x){return op.ids.indexOf(x.id)<0&&op.ids.map(function(i){return MAPA[i]||i}).indexOf(x.id)<0});
+    }
+  });
+  return list;
+}
+function opGuardar(doc,id){
+  doc=sinId(doc);
+  if(!id){var t=tmpId();COLA.push({op:"add",tmp:t,doc:doc});guardarCola();sincronizar();return t}
+  if(esTmp(id)){var a=COLA.filter(function(o){return o.op==="add"&&o.tmp===id&&!o.enviando})[0];if(a){a.doc=doc;guardarCola();sincronizar();return id}}
+  COLA.push({op:"save",id:id,doc:doc});guardarCola();sincronizar();return id;
+}
+function opBorrar(ids){
+  var resto=[];
+  ids.forEach(function(id){
+    var a=esTmp(id)&&COLA.filter(function(o){return o.op==="add"&&o.tmp===id})[0];
+    if(a&&!a.enviando){COLA=COLA.filter(function(o){return o!==a&&!(o.op==="save"&&o.id===id)})}
+    else if(a&&a.enviando){a.borrado=true}
+    else resto.push(id);
+  });
+  if(resto.length)COLA.push({op:"del",ids:resto});
+  guardarCola();sincronizar();
+}
+function pintarPend(){
+  var b=el("pend"), n=COLA.length;
+  if(!n||!SYNC.fallo){b.hidden=true;return}
+  b.textContent=(n===1?"1 movimiento":n+" movimientos")+" por guardar en tu hoja (¿sin internet?). Ya cuentan en tus números; se suben solos cuando regrese la conexión.";
+  b.hidden=false;
+}
+function quitarOp(op){COLA=COLA.filter(function(o){return o!==op});guardarCola()}
+function sincronizar(){
+  if(SYNC.activo||!COLA.length||!S.k)return;
+  clearTimeout(SYNC.t); SYNC.activo=true;
+  var op=COLA[0], body, tr=function(id){return MAPA[id]||id};
+  if(op.op==="add")body={action:"add",doc:op.doc};
+  else if(op.op==="save")body={action:"save",id:tr(op.id),doc:op.doc};
+  else body={action:"del",ids:op.ids.map(tr).filter(function(i){return !esTmp(i)})};
+  if((op.op==="save"&&esTmp(body.id))||(op.op==="del"&&!body.ids.length)){quitarOp(op);SYNC.activo=false;return sincronizar()}
+  op.enviando=true;
+  api(body).then(function(o){
+    if(op.op==="add"){
+      MAPA[op.tmp]=o.id;
+      S.gastos.forEach(function(x){if(x.id===op.tmp)x.id=o.id});
+      if(F.id===op.tmp)F.id=o.id;
+      if(op.borrado)COLA.push({op:"del",ids:[o.id]});
+    }
+    quitarOp(op); S.syncGen++; SYNC.activo=false;
+    if(!COLA.length)SYNC.fallo=false;
+    guardarCache(); pintarPend(); render(); sincronizar();
+  }).catch(function(e){
+    SYNC.activo=false; op.enviando=false;
+    if(e&&e.servidor){
+      if(e.code==="clave"){try{localStorage.removeItem("quincena.k")}catch(err){}S.k="";bloquear("Esa clave no funcionó. Abre la app con tu enlace personal.");return}
+      quitarOp(op); toast("No se pudo guardar un movimiento: "+e.message); suscribir(); return;
+    }
+    SYNC.fallo=true; pintarPend(); SYNC.t=setTimeout(sincronizar,15000);
+  });
+}
+window.addEventListener("online",sincronizar);
+document.addEventListener("visibilitychange",function(){if(!document.hidden)sincronizar()});
 el("lockForm").addEventListener("submit",function(e){
   e.preventDefault(); var v=el("lockKey").value.trim(); if(!v)return;
   S.k=v; try{localStorage.setItem("quincena.k",v)}catch(err){} el("lockKey").value=""; iniciar();
@@ -693,29 +798,23 @@ el("frm").addEventListener("submit",function(e){
   var doc={fecha:fecha,mes:fecha.slice(0,7),q:qValida(fecha.slice(0,7),F.q),rubro:F.rubro,sub:sub,monto:monto,nota:nota,creado:F.creado||new Date().toISOString()};
   if(F.id) doc.editado=new Date().toISOString();
   var r=rubroDe(F.rubro), msg=(F.id?"Guardado: ":"Anotado: ")+$$(monto)+" en "+r.n+(sub?" · "+sub:"")+(doc.mes!==S.mes?" ("+MESES[+doc.mes.slice(5,7)-1]+")":"");
-  el("fSave").disabled=true; el("fSave").textContent="Guardando…";
-  var editId=F.id, p=editId?api({action:"save",id:editId,doc:doc}):api({action:"add",doc:doc});
-  p.then(function(o){
-    doc.id=editId||o.id;
-    S.gastos=S.gastos.filter(function(x){return x.id!==doc.id});
-    if(doc.mes===S.mes)S.gastos.push(doc);
-    guardarCache(); cerrar(); render(); toast(msg);
-  }).catch(function(err){
-    el("fSave").disabled=false; el("fSave").textContent=editId?"Guardar cambios":"Anotar gasto";
-    el("fErr").textContent=err&&err.code==="clave"?"Tu clave ya no funciona. Abre la app con tu enlace personal.":"No se guardó. Revisa tu conexión y vuelve a tocar el botón.";
-  });
+  var editId=F.id, id=opGuardar(doc,editId);
+  doc.id=id;
+  S.gastos=S.gastos.filter(function(x){return x.id!==id&&x.id!==editId});
+  if(doc.mes===S.mes)S.gastos.push(norm(doc));
+  guardarCache(); cerrar(); render(); toast(msg);
 });
 el("fDel").onclick=function(){
   var b=el("fDel");
   if(!b.classList.contains("arm")){b.classList.add("arm");b.textContent="¿Seguro? Toca otra vez para borrar";armado=setTimeout(desarmar,4000);return}
   desarmar();
   var id=F.id;
-  api({action:"del",ids:[id]}).then(function(){S.gastos=S.gastos.filter(function(x){return x.id!==id});guardarCache();cerrar();render();toast("Gasto borrado")}).catch(function(){el("fErr").textContent="No se pudo borrar. Intenta otra vez."});
+  opBorrar([id]); S.gastos=S.gastos.filter(function(x){return x.id!==id}); guardarCache(); cerrar(); render(); toast("Gasto borrado");
 };
 
 /* ---------- botón de pensión: por pagar ↔ pagada ---------- */
-function dbAdd(doc){return api({action:"add",doc:doc}).then(function(o){doc.id=o.id;if(doc.mes===S.mes)S.gastos.push(doc);guardarCache()})}
-function dbDels(ids){return api({action:"del",ids:ids}).then(function(){S.gastos=S.gastos.filter(function(x){return ids.indexOf(x.id)<0});guardarCache()})}
+function dbAdd(doc){var id=opGuardar(doc,null),d=Object.assign({},doc);d.id=id;if(d.mes===S.mes)S.gastos.push(norm(d));guardarCache();return Promise.resolve()}
+function dbDels(ids){opBorrar(ids);S.gastos=S.gastos.filter(function(x){return ids.indexOf(x.id)<0});guardarCache();return Promise.resolve()}
 function pensionToggle(qn){
   if(S.pensBusy||S.cargando) return;
   var P=calc()["q"+qn];
@@ -844,14 +943,77 @@ el("pSave").onclick=function(){
 };
 function irA(p){
   S.pag=p;
-  el("t-gastos").setAttribute("aria-pressed",String(p==="gastos"));el("t-pres").setAttribute("aria-pressed",String(p!=="gastos"));
-  el("pGastos").hidden=p!=="gastos"; el("pPres").hidden=p==="gastos";
-  document.querySelector(".monthnav").style.visibility=p==="gastos"?"":"hidden";
-  if(p!=="gastos"){if(!E||!Edirty)cargarEditor();pintarEditor()}
+  el("t-gastos").setAttribute("aria-pressed",String(p==="gastos"));el("t-pres").setAttribute("aria-pressed",String(p==="presupuesto"));el("t-cierre").setAttribute("aria-pressed",String(p==="cierre"));
+  el("pGastos").hidden=p!=="gastos"; el("pPres").hidden=p!=="presupuesto"; el("pCierre").hidden=p!=="cierre";
+  document.querySelector(".monthnav").style.display=p==="gastos"?"":"none";
+  if(p==="presupuesto"){if(!E||!Edirty)cargarEditor();pintarEditor()}
+  if(p==="cierre")pintarCierre();
   window.scrollTo(0,0);
 }
 el("t-gastos").onclick=function(){irA("gastos")};
 el("t-pres").onclick=function(){irA("presupuesto")};
+el("t-cierre").onclick=function(){irA("cierre")};
+el("mvFiltro").addEventListener("change",function(){S.filtro=this.value;renderLista()});
+
+/* ---------- cierre de año: presupuesto, real (lo escribes tú) y diferencia ---------- */
+function secciones(t){
+  var out=[],idx={};
+  (S.cierre||[]).filter(function(r){return r.tabla===t}).forEach(function(r){
+    if(!(r.seccion in idx)){idx[r.seccion]=out.length;out.push({nombre:r.seccion,rows:[]})}
+    out[idx[r.seccion]].rows.push(r);
+  });
+  out.forEach(function(sx){sx.p=0;sx.r=0;sx.d=0;sx.n=0;sx.rows.forEach(function(r){var p=+r.presupuesto||0;sx.p+=p;if(r.real!=null&&r.real!==""){sx.r+=+r.real;sx.d+=p-(+r.real);sx.n++}})});
+  return out;
+}
+/* en el cierre: positivo en verde, negativo en rojo */
+function colorSigno(d){return d>0.5?"ok":(d<-0.5?"bad":"")}
+function celDif(p,r,ingreso,tieneReal){
+  if(!tieneReal)return cel("—","dim");
+  var d=p-r;
+  return cel($$(d),colorSigno(d));
+}
+/* totales: diferencia = presupuesto − real, tal cual (lo que no has escrito cuenta como 0) */
+function filaTot(nombre,p,r,ingreso,cls){
+  var d=p-r;
+  return '<tr class="'+(cls||"tot")+'"><td>'+esc(nombre)+'</td>'+cel($$(p),"g")+cel($$(r))+cel($$(d),colorSigno(d))+'</tr>';
+}
+function tablaCierre(t){
+  var secs=secciones(t), ingreso=t===2, h='<thead><tr><th>'+(ingreso?"Ingresos de fin de año":"Gastos de fin de año")+'</th><th class="g"><span class="largo">Presupuesto</span><span class="corto">Presup.</span></th><th>Real</th><th><span class="largo">Diferencia</span><span class="corto">Dif.</span></th></tr></thead><tbody>';
+  var P=0,R=0,D=0,Nn=0;
+  secs.forEach(function(sx){
+    if(secs.length>1||ingreso)h+='<tr class="sub"><td class="sub" colspan="4">'+esc(sx.nombre)+'</td></tr>';
+    sx.rows.forEach(function(r){
+      var tiene=r.real!=null&&r.real!=="";
+      h+='<tr><td>'+esc(r.concepto)+'</td>'+cel($$(+r.presupuesto||0),"g")+
+        '<td class="real"><input class="cin" inputmode="decimal" data-c="'+escA(r.clave)+'" value="'+(tiene?Math.round(+r.real):"")+'" placeholder="—" aria-label="Real de '+escA(r.concepto)+'"></td>'+
+        celDif(+r.presupuesto||0,tiene?+r.real:0,ingreso,tiene)+'</tr>';
+    });
+    if(sx.rows.length>1)h+=filaTot("Total "+sx.nombre.charAt(0).toLowerCase()+sx.nombre.slice(1),sx.p,sx.r,ingreso,"sec",sx.d,sx.n);
+    P+=sx.p;R+=sx.r;D+=sx.d;Nn+=sx.n;
+  });
+  if(!secs.length)h+='<tr><td colspan="4" class="dim">Cargando…</td></tr>';
+  else if(!ingreso)h+=filaTot("Total",P,R,false,"tot",D,Nn);
+  else {
+    h+=filaTot("Total ingresos",P,R,true,"tot",D,Nn);
+    var g=secciones(1),GP=0,GR=0,GD=0,GN=0;
+    g.forEach(function(sx){h+='<tr><td>− '+esc(sx.nombre)+'</td>'+cel($$(sx.p),"g")+cel($$(sx.r))+cel("")+'</tr>';GP+=sx.p;GR+=sx.r;GD+=sx.d;GN+=sx.n});
+    h+=filaTot("Resta",P-GP,R-GR,true);
+  }
+  return h+'</tbody>';
+}
+function pintarCierre(){el("cT1").innerHTML=tablaCierre(1);el("cT2").innerHTML=tablaCierre(2)}
+el("pCierre").addEventListener("focusin",function(){S.cEditando=true});
+el("pCierre").addEventListener("focusout",function(){S.cEditando=false});
+el("pCierre").addEventListener("change",function(e){
+  var t=e.target,k=t.getAttribute("data-c");if(!k)return;
+  var raw=String(t.value).replace(/[$,\s]/g,""), v=raw===""?null:Math.round(parseFloat(raw)*100)/100;
+  if(raw!==""&&!(v>=0)){el("cErr").textContent="Escribe solo números, por ejemplo 15000.";return}
+  var row=(S.cierre||[]).filter(function(r){return r.clave===k})[0];if(!row)return;
+  var antes=row.real; row.real=v; el("cErr").textContent=""; guardarCache(); pintarCierre();
+  api({action:"cierreReal",clave:k,real:v==null?"":v}).then(function(){toast("Guardado")}).catch(function(){
+    row.real=antes; guardarCache(); pintarCierre(); el("cErr").textContent="No se guardó. Revisa tu conexión y vuelve a escribirlo.";
+  });
+});
 
 var tt=null;
 function toast(t){var x=el("toast");x.textContent=t;x.hidden=false;clearTimeout(tt);tt=setTimeout(function(){x.hidden=true},2600)}
@@ -891,41 +1053,20 @@ function finToque(){
 window.addEventListener("touchend",finToque,{passive:true});
 window.addEventListener("touchcancel",function(){PT.y0=null;PT.d=0;el("ptr").hidden=true},{passive:true});
 
-/* ---------- ojos: siguen el mouse en la compu y se mueven con el giro del celular ---------- */
-var px=0.5, py=0.35, GIRO=null; /* GIRO = {x,y} entre -1 y 1 cuando el celular manda su inclinación */
+/* ---------- ojos que siguen el mouse (en el celular, el dedo) ---------- */
+var px=0.5, py=0.35;
 function moveEyes(){
   var eyes=document.querySelectorAll(".eye");
   for(var i=0;i<eyes.length;i++){
     var r=eyes[i].getBoundingClientRect(); if(!r.width) continue;
-    var a,m;
-    if(GIRO){a=Math.atan2(GIRO.y,GIRO.x);m=Math.min(1,Math.hypot(GIRO.x,GIRO.y))*(r.width*0.17)}
-    else{var dx=px*window.innerWidth-(r.left+r.width/2), dy=py*window.innerHeight-(r.top+r.height/2);
-      a=Math.atan2(dy,dx);m=Math.min(1,Math.hypot(dx,dy)/260)*(r.width*0.17)}
+    var dx=px*window.innerWidth-(r.left+r.width/2), dy=py*window.innerHeight-(r.top+r.height/2);
+    var a=Math.atan2(dy,dx), m=Math.min(1,Math.hypot(dx,dy)/260)*(r.width*0.17);
     var p=eyes[i].firstElementChild;
     if(p) p.style.transform="translate("+(Math.cos(a)*m).toFixed(1)+"px,"+(Math.sin(a)*m).toFixed(1)+"px)";
   }
 }
-window.addEventListener("pointermove",function(e){if(e.pointerType==="touch"&&GIRO)return;px=e.clientX/window.innerWidth;py=e.clientY/window.innerHeight;moveEyes()},{passive:true});
-window.addEventListener("pointerdown",function(e){if(e.pointerType==="touch"&&GIRO)return;px=e.clientX/window.innerWidth;py=e.clientY/window.innerHeight;moveEyes()},{passive:true});
-var giroRAF=0;
-function onGiro(e){
-  if(e.gamma==null||e.beta==null)return;
-  var ang=(screen.orientation&&screen.orientation.angle)||window.orientation||0, gx=e.gamma, gy=e.beta-45;
-  if(ang===90){gx=e.beta;gy=-e.gamma-20}else if(ang===-90||ang===270){gx=-e.beta;gy=e.gamma-20}
-  GIRO={x:Math.max(-1,Math.min(1,gx/30)),y:Math.max(-1,Math.min(1,gy/30))};
-  if(!giroRAF)giroRAF=requestAnimationFrame(function(){giroRAF=0;moveEyes()});
-}
-var DOE=window.DeviceOrientationEvent;
-if(DOE){
-  /* Android y la mayoría de los navegadores mandan el giro sin pedir permiso */
-  window.addEventListener("deviceorientation",onGiro);
-  /* iPhone: pide permiso de movimiento con el primer toque */
-  if(typeof DOE.requestPermission==="function"){
-    document.addEventListener("click",function(){
-      DOE.requestPermission().then(function(r){if(r==="granted")window.addEventListener("deviceorientation",onGiro)}).catch(function(){});
-    },{once:true,capture:true});
-  }
-}
+window.addEventListener("pointermove",function(e){px=e.clientX/window.innerWidth;py=e.clientY/window.innerHeight;moveEyes()},{passive:true});
+window.addEventListener("pointerdown",function(e){px=e.clientX/window.innerWidth;py=e.clientY/window.innerHeight;moveEyes()},{passive:true});
 window.addEventListener("resize",moveEyes);
 setInterval(moveEyes,900);
 

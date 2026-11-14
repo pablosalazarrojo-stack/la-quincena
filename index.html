@@ -45,7 +45,7 @@ body{
   font-size:17px;line-height:1.45;
   padding-left:max(16px,env(safe-area-inset-left,0px));
   padding-right:max(16px,env(safe-area-inset-right,0px));
-  padding-top:calc(22px + env(safe-area-inset-top,0px));padding-bottom:calc(120px + env(safe-area-inset-bottom,0px));
+  padding-top:calc(22px + env(safe-area-inset-top,0px));padding-bottom:calc(40px + env(safe-area-inset-bottom,0px));
 }
 .wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
 h1,h2,h3,p{margin:0;text-wrap:balance}
@@ -113,11 +113,11 @@ header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .cat .q.bad{color:var(--tomato)}
 .cat .bd{font-size:13px;color:var(--muted)}
 .bar{height:10px;border-radius:999px;background:var(--soft);overflow:hidden}
-.bar i{display:block;height:100%;border-radius:999px;background:var(--basil)}
-.bar i.warn{background:var(--chili)}
-.bar i.bad{background:var(--tomato)}
+.bar i{display:block;height:100%;border-radius:999px;background:var(--basil);transition:width .3s ease,background-color .3s ease}
 .tag{font-size:12px;font-weight:500;border-radius:999px;padding:2px 8px;background:var(--soft);color:var(--muted)}
-.idle{font-size:14px;color:var(--muted)}
+.idle{font-size:14px;color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.idle button{border:2px solid var(--line);background:var(--card);border-radius:999px;padding:4px 12px;font-size:14px;font-weight:500}
+.idle button:hover{border-color:var(--fg)}
 
 /* tabla */
 .tablewrap{overflow-x:auto;border:2px solid var(--line);border-radius:18px;background:var(--card)}
@@ -302,7 +302,6 @@ html,body{overscroll-behavior-y:contain}
   <form id="lockForm"><input id="lockKey" type="password" autocomplete="off" placeholder="Clave" aria-label="Clave"><button class="save" type="submit">Entrar</button></form>
 </div>
 
-<button id="fab" class="fab" hidden>+ Gasto</button>
 
 <div id="scrim" class="scrim" hidden></div>
 <div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle" hidden>
@@ -412,6 +411,22 @@ function calc(){
     rs:a.rs.map(function(x,i){var y=b.rs[i];return {r:x.r,plan:x.plan+y.plan,gas:x.gas+y.gas,queda:x.queda+y.queda}})};
   return {q1:a,q2:b,mes:m};
 }
+/* color de la barra según cuánto llevas: verde → amarillo → naranja → rojo */
+var ESPECTRO=[[0,[39,160,74]],[0.55,[242,194,24]],[0.85,[242,105,27]],[1,[226,59,39]]];
+function colorAvance(p){
+  if(!(p>0))p=0; if(p>=1)return "rgb(226,59,39)";
+  for(var i=1;i<ESPECTRO.length;i++){if(p<=ESPECTRO[i][0]){var a=ESPECTRO[i-1],b=ESPECTRO[i],t=(p-a[0])/(b[0]-a[0]);
+    return "rgb("+a[1].map(function(v,j){return Math.round(v+(b[1][j]-v)*t)}).join(",")+")"}}
+  return "rgb(226,59,39)";
+}
+/* orden de los rubros: primero los del día a día, luego los demás como vienen en el presupuesto */
+var ORDEN=["social","otros","super","transporte","lavanderia"];
+function ordenar(xs,key){
+  return xs.map(function(x,i){return {x:x,i:i}}).sort(function(a,b){
+    var ka=ORDEN.indexOf(key(a.x)),kb=ORDEN.indexOf(key(b.x)); ka=ka<0?99:ka; kb=kb<0?99:kb;
+    return ka-kb||a.i-b.i;
+  }).map(function(o){return o.x});
+}
 function nivel(gas,plan){ if(plan<=0) return gas>0?"bad":""; var p=gas/plan; return p>1.0001?"bad":(p>=0.85?"warn":""); }
 
 /* ---------- pintar ---------- */
@@ -467,18 +482,18 @@ function render(){
     '<div class="chips">'+chips.join("")+'</div>';
 
   /* rubros */
-  var act=V.rs.filter(function(x){return x.plan>0||x.gas>0});
-  var idle=V.rs.filter(function(x){return !(x.plan>0||x.gas>0)});
+  var act=ordenar(V.rs.filter(function(x){return x.plan>0||x.gas>0}),function(x){return x.r.k});
+  var idle=ordenar(V.rs.filter(function(x){return !(x.plan>0||x.gas>0)}),function(x){return x.r.k});
   el("cats").innerHTML=act.map(function(x){
-    var n=nivel(x.gas,x.plan), p=x.plan>0?Math.min(100,x.gas/x.plan*100):(x.gas>0?100:0);
+    var p=x.plan>0?Math.min(100,x.gas/x.plan*100):(x.gas>0?100:0);
     return '<button class="cat" data-r="'+x.r.k+'">'+
       '<div class="top"><span class="nm">'+esc(x.r.n)+(x.r.fijo?' <span class="tag">fijo</span>':'')+'</span>'+
       '<span class="q num'+(x.queda<0?" bad":"")+'">'+$$(x.queda)+'</span></div>'+
-      '<div class="bar"><i class="'+n+'" style="width:'+p.toFixed(1)+'%"></i></div>'+
+      '<div class="bar"><i style="width:'+p.toFixed(1)+'%;background-color:'+colorAvance(p/100)+'"></i></div>'+
       '<div class="bd num">'+(x.queda<0?"Te pasaste · ":"")+'Gastado '+$$(x.gas)+' de '+$$(x.plan)+'</div>'+subsLinea(x.r)+'</button>';
   }).join("");
   var ie=el("idle");
-  if(idle.length){ie.hidden=false;ie.textContent="Sin presupuesto en este periodo: "+idle.map(function(x){return x.r.n}).join(", ")+".";}
+  if(idle.length){ie.hidden=false;ie.innerHTML='<span>Sin presupuesto en este periodo:</span>'+idle.map(function(x){return '<button type="button" data-r="'+x.r.k+'">'+esc(x.r.n)+'</button>'}).join("");}
   else ie.hidden=true;
 
   renderTabla(C);
@@ -537,7 +552,7 @@ function renderLista(){
   el("movTitle").textContent="Movimientos"+(xs.length?" ("+xs.length+")":"");
   var L=el("list");
   if(S.cargando&&!xs.length){L.innerHTML='<div class="empty">Trayendo tus gastos…</div>';return}
-  if(!xs.length){L.innerHTML='<div class="empty">Todavía no hay gastos en este periodo. Toca «+ Gasto» para anotar el primero; tarda cinco segundos.</div>';return}
+  if(!xs.length){L.innerHTML='<div class="empty">Todavía no hay gastos en este periodo. Toca un rubro de arriba para anotar el primero; tarda cinco segundos.</div>';return}
   L.innerHTML=xs.map(function(x){
     var r=rubroDe(x.rubro)||{n:x.rubro}, mi=+x.fecha.slice(5,7)-1;
     var qOtra=(x.q!==qDe(x.fecha))?' · cuenta en Q'+x.q:'';
@@ -580,13 +595,13 @@ function suscribir(){
 }
 function mostrarBanner(t){var b=el("banner");b.textContent=t;b.hidden=false}
 function ocultarBanner(){el("banner").hidden=true}
-function bloquear(msg){el("app").hidden=true;el("fab").hidden=true;el("lock").hidden=false;el("lockMsg").textContent=msg||""}
+function bloquear(msg){el("app").hidden=true;el("lock").hidden=false;el("lockMsg").textContent=msg||""}
 function iniciar(){
   var m=/[#&]k=([^&]+)/.exec(location.hash);
   if(m){S.k=decodeURIComponent(m[1]);try{localStorage.setItem("quincena.k",S.k)}catch(e){}}
   if(!S.k){try{S.k=localStorage.getItem("quincena.k")||""}catch(e){}}
   if(!S.k){bloquear("");return}
-  el("lock").hidden=true; el("app").hidden=false; el("fab").hidden=S.pag!=="gastos";
+  el("lock").hidden=true; el("app").hidden=false;
   suscribir();
 }
 el("lockForm").addEventListener("submit",function(e){
@@ -597,7 +612,7 @@ el("lockForm").addEventListener("submit",function(e){
 /* ---------- hoja para anotar / editar ---------- */
 var F={id:null,rubro:null,sub:null,q:1,creado:null,orig:null};
 function pintarRubros(){
-  var all=CFG.rubros.concat([PENSION]);
+  var all=ordenar(CFG.rubros,function(r){return r.k}).concat([PENSION]);
   el("fRubros").innerHTML=all.map(function(r){return '<button type="button" data-k="'+r.k+'" aria-pressed="'+(F.rubro===r.k)+'">'+esc(r.n)+'</button>'}).join("");
   var r=F.rubro&&rubroDe(F.rubro), subs=(r&&r.subs)||[];
   el("fSubsWrap").hidden=!subs.length;
@@ -638,7 +653,7 @@ function abrir(g,rubro){
   el("fDelRow").hidden=!g; desarmar();
   el("fErr").textContent=""; el("fSave").disabled=false;
   pintarRubros(); pintarQ();
-  el("scrim").hidden=false; el("sheet").hidden=false; el("fab").hidden=true;
+  el("scrim").hidden=false; el("sheet").hidden=false;
   setTimeout(function(){ if(!g) el("fMonto").focus(); },60);
 }
 function defaultFecha(){
@@ -646,7 +661,7 @@ function defaultFecha(){
   if(h.slice(0,7)===S.mes) return h;
   return S.mes+(S.vista==="q2"?"-16":"-01");
 }
-function cerrar(){el("scrim").hidden=true;el("sheet").hidden=true;el("pagoSheet").hidden=true;el("fab").hidden=S.pag!=="gastos"}
+function cerrar(){el("scrim").hidden=true;el("sheet").hidden=true;el("pagoSheet").hidden=true}
 var armado=null;
 function desarmar(){var b=el("fDel");b.classList.remove("arm");b.textContent="Borrar este gasto";clearTimeout(armado)}
 
@@ -658,8 +673,8 @@ el("fFecha").addEventListener("change",function(){var v=el("fFecha").value;if(v)
 el("fMonto").addEventListener("input",pintarSaldo);
 el("shClose").onclick=cerrar; el("scrim").onclick=cerrar;
 document.addEventListener("keydown",function(e){if(e.key==="Escape"&&(!el("sheet").hidden||!el("pagoSheet").hidden))cerrar()});
-el("fab").onclick=function(){abrir(null)};
 el("cats").addEventListener("click",function(e){var b=e.target.closest(".cat");if(b)abrir(null,b.getAttribute("data-r"))});
+el("idle").addEventListener("click",function(e){var b=e.target.closest("[data-r]");if(b)abrir(null,b.getAttribute("data-r"))});
 el("list").addEventListener("click",function(e){
   var b=e.target.closest(".mv");if(!b)return;var id=b.getAttribute("data-id");
   var g=S.gastos.filter(function(x){return x.id===id})[0]; if(g) abrir(g);
@@ -729,7 +744,7 @@ function abrirPago(qn){
   el("pgHint").textContent="Quincena "+qn+" de "+MESES[+ym.slice(5,7)-1]+". Con la fecha de tu pago cuento los días exactos que tiene que durar tu dinero.";
   el("pgFecha").value=f||(qn===1?ym+"-15":ym+"-"+pad(diasMes(ym)));
   el("pgDelRow").hidden=!f; el("pgErr").textContent=""; el("pgSave").disabled=false; el("pgSave").textContent="Guardar fecha";
-  el("scrim").hidden=false; el("pagoSheet").hidden=false; el("fab").hidden=true;
+  el("scrim").hidden=false; el("pagoSheet").hidden=false;
 }
 function guardarPagoFecha(fecha){
   el("pgSave").disabled=true; el("pgSave").textContent="Guardando…";
@@ -829,7 +844,6 @@ function irA(p){
   el("t-gastos").setAttribute("aria-pressed",String(p==="gastos"));el("t-pres").setAttribute("aria-pressed",String(p!=="gastos"));
   el("pGastos").hidden=p!=="gastos"; el("pPres").hidden=p==="gastos";
   document.querySelector(".monthnav").style.visibility=p==="gastos"?"":"hidden";
-  el("fab").hidden=p!=="gastos";
   if(p!=="gastos"){if(!E||!Edirty)cargarEditor();pintarEditor()}
   window.scrollTo(0,0);
 }

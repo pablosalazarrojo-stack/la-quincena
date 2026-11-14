@@ -311,7 +311,7 @@ html,body{overscroll-behavior-y:contain}
       <label class="lab" for="fMonto">Monto</label>
       <div class="money"><span>$</span><input id="fMonto" inputmode="decimal" placeholder="0" aria-label="Monto en pesos"></div>
     </div>
-    <div>
+    <div id="fRubrosWrap">
       <span class="lab">Rubro</span>
       <div id="fRubros" class="pick" role="group" aria-label="Rubro"></div>
     </div>
@@ -320,7 +320,7 @@ html,body{overscroll-behavior-y:contain}
       <div id="fSubs" class="pick sub" role="group" aria-labelledby="fSubsLab"></div>
     </div>
     <div class="row2" id="fRow2">
-      <div><label class="lab" for="fFecha">Fecha</label><input type="date" id="fFecha"></div>
+      <div id="fFechaWrap"><label class="lab" for="fFecha">Fecha</label><input type="date" id="fFecha"></div>
       <div id="fQWrap"><span class="lab">Cuenta en</span>
         <div class="qpick" role="group" aria-label="Quincena">
           <button type="button" id="fQ1" data-q="1" aria-pressed="false">Q1</button>
@@ -643,9 +643,12 @@ function pintarSaldo(){
 function abrir(g,rubro){
   F.id=g?g.id:null; F.creado=g?g.creado:null;
   F.rubro=g?g.rubro:(rubro||null); F.sub=g?(g.sub||null):null;
-  var f=g?g.fecha:defaultFecha();
+  var f=g?g.fecha:hoy();
   el("fFecha").value=f; F.q=g?g.q:qValida(f.slice(0,7),S.vista==="q1"?1:S.vista==="q2"?2:qDe(f));
-  S.qFija=S.vista!=="mes"; el("fQWrap").hidden=S.qFija; el("fRow2").className="row2"+(S.qFija?" one":"");
+  S.qFija=S.vista!=="mes"; el("fQWrap").hidden=S.qFija;
+  el("fRubrosWrap").hidden=!g&&!!F.rubro; el("fFechaWrap").hidden=!g;
+  el("fRow2").hidden=el("fQWrap").hidden&&el("fFechaWrap").hidden;
+  el("fRow2").className="row2"+((el("fQWrap").hidden||el("fFechaWrap").hidden)?" one":"");
   el("fMonto").value=g?String(g.monto):"";
   el("fNota").value=g?(g.nota||""):"";
   el("shTitle").textContent=g?"Editar gasto":"Nuevo gasto";
@@ -888,20 +891,41 @@ function finToque(){
 window.addEventListener("touchend",finToque,{passive:true});
 window.addEventListener("touchcancel",function(){PT.y0=null;PT.d=0;el("ptr").hidden=true},{passive:true});
 
-/* ---------- ojos que siguen el cursor ---------- */
-var px=0.5, py=0.35;
+/* ---------- ojos: siguen el mouse en la compu y se mueven con el giro del celular ---------- */
+var px=0.5, py=0.35, GIRO=null; /* GIRO = {x,y} entre -1 y 1 cuando el celular manda su inclinación */
 function moveEyes(){
   var eyes=document.querySelectorAll(".eye");
   for(var i=0;i<eyes.length;i++){
     var r=eyes[i].getBoundingClientRect(); if(!r.width) continue;
-    var dx=px*window.innerWidth-(r.left+r.width/2), dy=py*window.innerHeight-(r.top+r.height/2);
-    var a=Math.atan2(dy,dx), m=Math.min(1,Math.hypot(dx,dy)/260)*(r.width*0.17);
+    var a,m;
+    if(GIRO){a=Math.atan2(GIRO.y,GIRO.x);m=Math.min(1,Math.hypot(GIRO.x,GIRO.y))*(r.width*0.17)}
+    else{var dx=px*window.innerWidth-(r.left+r.width/2), dy=py*window.innerHeight-(r.top+r.height/2);
+      a=Math.atan2(dy,dx);m=Math.min(1,Math.hypot(dx,dy)/260)*(r.width*0.17)}
     var p=eyes[i].firstElementChild;
     if(p) p.style.transform="translate("+(Math.cos(a)*m).toFixed(1)+"px,"+(Math.sin(a)*m).toFixed(1)+"px)";
   }
 }
-window.addEventListener("pointermove",function(e){px=e.clientX/window.innerWidth;py=e.clientY/window.innerHeight;moveEyes()},{passive:true});
-window.addEventListener("pointerdown",function(e){px=e.clientX/window.innerWidth;py=e.clientY/window.innerHeight;moveEyes()},{passive:true});
+window.addEventListener("pointermove",function(e){if(e.pointerType==="touch"&&GIRO)return;px=e.clientX/window.innerWidth;py=e.clientY/window.innerHeight;moveEyes()},{passive:true});
+window.addEventListener("pointerdown",function(e){if(e.pointerType==="touch"&&GIRO)return;px=e.clientX/window.innerWidth;py=e.clientY/window.innerHeight;moveEyes()},{passive:true});
+var giroRAF=0;
+function onGiro(e){
+  if(e.gamma==null||e.beta==null)return;
+  var ang=(screen.orientation&&screen.orientation.angle)||window.orientation||0, gx=e.gamma, gy=e.beta-45;
+  if(ang===90){gx=e.beta;gy=-e.gamma-20}else if(ang===-90||ang===270){gx=-e.beta;gy=e.gamma-20}
+  GIRO={x:Math.max(-1,Math.min(1,gx/30)),y:Math.max(-1,Math.min(1,gy/30))};
+  if(!giroRAF)giroRAF=requestAnimationFrame(function(){giroRAF=0;moveEyes()});
+}
+var DOE=window.DeviceOrientationEvent;
+if(DOE){
+  /* Android y la mayoría de los navegadores mandan el giro sin pedir permiso */
+  window.addEventListener("deviceorientation",onGiro);
+  /* iPhone: pide permiso de movimiento con el primer toque */
+  if(typeof DOE.requestPermission==="function"){
+    document.addEventListener("click",function(){
+      DOE.requestPermission().then(function(r){if(r==="granted")window.addEventListener("deviceorientation",onGiro)}).catch(function(){});
+    },{once:true,capture:true});
+  }
+}
 window.addEventListener("resize",moveEyes);
 setInterval(moveEyes,900);
 

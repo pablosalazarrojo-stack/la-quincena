@@ -94,6 +94,7 @@ function doPost(e) {
       case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), cierre: filasCierre(), cierreMovs: movsCierre(), gastos: leer(String(d.mes || "")) }; break; }
       case "savePresupuesto": { guardarPresupuesto(d.filas); const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f }; break; }
       case "cierreReal": guardarRealCierre(String(d.clave || ""), d.real); out = { ok: true }; break;
+      case "cierrePresupuesto": guardarPresupuestoCierre(d.valores); out = { ok: true, cierre: filasCierre() }; break;
       case "cierreMov": out = Object.assign({ ok: true }, agregarMovCierre(d)); break;
       case "cierreMovSave": out = Object.assign({ ok: true }, editarMovCierre(String(d.id || ""), d)); break;
       case "cierreMovDel": out = Object.assign({ ok: true }, borrarMovCierre(String(d.id || ""))); break;
@@ -383,5 +384,24 @@ function borrarMovCierre(id) {
     try { real = sumarReal(clave, -antes); } catch (e) { /* el concepto ya no existe: solo se borra el gasto */ }
     sh.deleteRow(r);
     return { clave: clave, real: real };
+  });
+}
+
+/* «Ajustar presupuesto» del cierre: { clave: monto } → columna «presupuesto» de la pestaña «Cierre de año» */
+function guardarPresupuestoCierre(valores) {
+  valores = valores || {};
+  const vals = {};
+  Object.keys(valores).forEach(function (k) {
+    if (!/^[a-z0-9_-]{2,30}$/.test(k)) throw new Error("Concepto inválido.");
+    const v = Math.round(Number(valores[k]) * 100) / 100;
+    if (!(v >= 0 && v < 100000000)) throw new Error("Monto inválido.");
+    vals[k] = v;
+  });
+  conCandado(function () {
+    const sh = libro().getSheetByName(HOJA_C);
+    if (!sh || sh.getLastRow() < 2) throw new Error("Falta la pestaña «Cierre de año».");
+    const n = sh.getLastRow() - 1, claves = sh.getRange(2, 3, n, 1).getValues(), pres = sh.getRange(2, 5, n, 1).getValues();
+    for (let i = 0; i < n; i++) { const k = String(claves[i][0]).trim(); if (Object.prototype.hasOwnProperty.call(vals, k)) pres[i][0] = vals[k]; }
+    sh.getRange(2, 5, n, 1).setValues(pres);
   });
 }

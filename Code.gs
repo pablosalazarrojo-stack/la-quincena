@@ -39,6 +39,8 @@ const HOJA_G = "Gastos";
 const HOJA_P = "Presupuesto";
 const HOJA_C = "Cierre de año";
 const COLS_C = ["tabla", "seccion", "clave", "concepto", "presupuesto", "real"];
+const HOJA_CM = "Cierre movimientos";
+const COLS_CM = ["id", "fecha", "clave", "monto", "nota", "creado"];
 const COLS = ["id", "fecha", "mes", "quincena", "rubro", "sub", "monto", "nota", "creado", "editado"];
 
 function props() { return PropertiesService.getScriptProperties(); }
@@ -89,9 +91,12 @@ function doPost(e) {
     const d = JSON.parse(e.postData.contents);
     checar(d.k);
     switch (d.action) {
-      case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), cierre: filasCierre(), gastos: leer(String(d.mes || "")) }; break; }
+      case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), cierre: filasCierre(), cierreMovs: movsCierre(), gastos: leer(String(d.mes || "")) }; break; }
       case "savePresupuesto": { guardarPresupuesto(d.filas); const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f }; break; }
       case "cierreReal": guardarRealCierre(String(d.clave || ""), d.real); out = { ok: true }; break;
+      case "cierreMov": out = Object.assign({ ok: true }, agregarMovCierre(d)); break;
+      case "cierreMovSave": out = Object.assign({ ok: true }, editarMovCierre(String(d.id || ""), d)); break;
+      case "cierreMovDel": out = Object.assign({ ok: true }, borrarMovCierre(String(d.id || ""))); break;
       case "pago": guardarPago(String(d.clave || ""), String(d.fecha || "")); out = { ok: true, pagos: pagos() }; break;
       case "add": out = { ok: true, id: agregar(d.doc) }; break;
       case "save": guardar(String(d.id || ""), d.doc); out = { ok: true }; break;
@@ -291,5 +296,92 @@ function guardarRealCierre(clave, real) {
       if (String(col[i][0]).trim() === clave) { sh.getRange(i + 2, 6).setValue(v); return; }
     }
     throw new Error("Ese concepto ya no existe.");
+  });
+}
+
+/* Gastos del cierre de año: cada gasto queda en la pestaña «Cierre movimientos»
+   y su monto se suma al «real» del concepto (al borrarlo o cambiarlo, se ajusta). */
+function hojaMovCierre() {
+  const ss = libro();
+  let sh = ss.getSheetByName(HOJA_CM);
+  if (!sh) {
+    sh = ss.insertSheet(HOJA_CM);
+    sh.getRange("A:C").setNumberFormat("@");
+    sh.getRange(1, 1, 1, COLS_CM.length).setValues([COLS_CM]).setFontWeight("bold");
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function movsCierre() {
+  const ss = libro(), sh = ss.getSheetByName(HOJA_CM), tz = ss.getSpreadsheetTimeZone();
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, COLS_CM.length).getValues()
+    .filter(function (r) { return String(r[0]).trim(); })
+    .map(function (r) {
+      return {
+        id: String(r[0]), fecha: r[1] instanceof Date ? Utilities.formatDate(r[1], tz, "yyyy-MM-dd") : String(r[1]).slice(0, 10),
+        clave: String(r[2]).trim(), monto: Number(r[3]) || 0, nota: String(r[4] || ""),
+        creado: r[5] instanceof Date ? r[5].toISOString() : String(r[5] || "")
+      };
+    });
+}
+
+function montoMov(m) {
+  const v = Math.round(Number(m) * 100) / 100;
+  if (!(v > 0 && v < 100000000)) throw new Error("Monto inválido.");
+  return v;
+}
+
+/* suma delta al «real» del concepto (dentro del candado); devuelve el real nuevo ("" si queda en 0) */
+function sumarReal(clave, delta) {
+  const sh = libro().getSheetByName(HOJA_C);
+  if (!sh || sh.getLastRow() < 2) throw new Error("Falta la pestaña «Cierre de año».");
+  const col = sh.getRange(2, 3, sh.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < col.length; i++) {
+    if (String(col[i][0]).trim() !== clave) continue;
+    const c = sh.getRange(i + 2, 6), cur = c.getValue();
+    let v = Math.round(((cur === "" || cur === null ? 0 : Number(cur) || 0) + delta) * 100) / 100;
+    if (!(v > 0.004)) v = "";
+    c.setValue(v);
+    return v === "" ? null : v;
+  }
+  throw new Error("Ese concepto ya no existe.");
+}
+
+function agregarMovCierre(d) {
+  const clave = String(d.clave || "");
+  if (!/^[a-z0-9_-]{2,30}$/.test(clave)) throw new Error("Concepto inválido.");
+  const monto = montoMov(d.monto);
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(d.fecha || "")) ? String(d.fecha) : Utilities.formatDate(new Date(), libro().getSpreadsheetTimeZone(), "yyyy-MM-dd");
+  const id = Utilities.getUuid().replace(/-/g, "").slice(0, 16);
+  return conCandado(function () {
+    const real = sumarReal(clave, monto);
+    hojaMovCierre().appendRow([id, fecha, clave, monto, limpio(d.nota, 500), new Date().toISOString()]);
+    return { id: id, clave: clave, real: real };
+  });
+}
+
+function editarMovCierre(id, d) {
+  const monto = montoMov(d.monto);
+  return conCandado(function () {
+    const sh = hojaMovCierre(), r = filaDe(sh, id);
+    if (r < 0) throw new Error("Ese gasto ya no existe.");
+    const clave = String(sh.getRange(r, 3).getValue()).trim(), antes = Number(sh.getRange(r, 4).getValue()) || 0;
+    const real = sumarReal(clave, monto - antes);
+    sh.getRange(r, 4, 1, 2).setValues([[monto, limpio(d.nota, 500)]]);
+    return { clave: clave, real: real };
+  });
+}
+
+function borrarMovCierre(id) {
+  return conCandado(function () {
+    const sh = hojaMovCierre(), r = filaDe(sh, id);
+    if (r < 0) throw new Error("Ese gasto ya no existe.");
+    const clave = String(sh.getRange(r, 3).getValue()).trim(), antes = Number(sh.getRange(r, 4).getValue()) || 0;
+    let real = null;
+    try { real = sumarReal(clave, -antes); } catch (e) { /* el concepto ya no existe: solo se borra el gasto */ }
+    sh.deleteRow(r);
+    return { clave: clave, real: real };
   });
 }

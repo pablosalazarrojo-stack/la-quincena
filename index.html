@@ -245,6 +245,10 @@ html,body{overscroll-behavior-y:contain}
 .lock{max-width:440px;margin:10vh auto 0;display:flex;flex-direction:column;gap:14px}
 .lock form{display:flex;flex-direction:column;gap:10px}
 .lock input{width:100%;font-family:inherit;font-size:17px;padding:12px 14px;border-radius:16px;border:2px solid var(--line);background:var(--card);color:var(--fg)}
+#pGastos{padding-bottom:64px}
+.cbtn{border:none;background:transparent;padding:0;font:inherit;color:inherit;text-align:left;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.cbtn .mas{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:999px;background:var(--lemon);color:var(--onColor);font-weight:700;font-size:15px;line-height:1;flex:none}
+.cbtn:hover .mas,.cbtn:focus-visible .mas{background:var(--fg);color:var(--bg)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 90px);z-index:40;background:var(--fg);color:var(--bg);border-radius:999px;padding:10px 18px;font-size:15px;font-weight:500;max-width:calc(100% - 32px);text-align:center}
 </style>
 </head>
@@ -301,6 +305,8 @@ html,body{overscroll-behavior-y:contain}
     <h2>Presupuesto por quincena</h2>
     <p class="hint">Cambia los montos de cada quincena o agrega rubros. Los cambios aplican a todos los meses.</p>
     <div class="tablewrap"><table id="pSum"></table></div>
+    <h3 class="h3">Por rubro</h3>
+    <div class="tablewrap"><table id="pRubTab"></table></div>
     <h3 class="h3">Ingresos</h3><div id="pIng" class="pgrp"></div>
     <h3 class="h3">Rubros</h3><div id="pRub" class="pgrp"></div>
     <button type="button" id="pAdd" class="add">+ Agregar rubro</button>
@@ -311,10 +317,12 @@ html,body{overscroll-behavior-y:contain}
 
   <section id="pCierre" class="blk" hidden>
     <h2>Cierre de año</h2>
-    <p class="hint">Escribe lo real conforme vaya pasando; se guarda solo. Diferencia = presupuesto − real: verde si es positiva, rojo si es negativa. En los totales, lo que todavía no escribes cuenta como 0.</p>
+    <p class="hint">Toca un concepto de gastos (el <b>+</b>) para anotar un gasto: se suma a lo real. También puedes escribir lo real directo; se guarda solo. Diferencia = presupuesto − real: verde si es positiva, rojo si es negativa. En los totales, lo que todavía no escribes cuenta como 0.</p>
     <div class="tablewrap"><table id="cT1" class="ctab"></table></div>
     <div class="tablewrap"><table id="cT2" class="ctab"></table></div>
     <p id="cErr" class="err" role="alert"></p>
+    <div class="mvhd"><h2 id="cmMovTitle">Movimientos</h2><select id="cmFiltro" aria-label="Filtrar movimientos del cierre por rubro"></select></div>
+    <div id="cmList" class="list"></div>
   </section>
 </div>
 
@@ -369,6 +377,21 @@ html,body{overscroll-behavior-y:contain}
   </div>
 </div>
 
+<div id="cmSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="cmTitle" hidden>
+  <form id="cmFrm" class="in" autocomplete="off">
+    <div class="hd"><h2 id="cmTitle">Nuevo gasto</h2><div id="cmSaldo" class="saldo" aria-live="polite" hidden></div><button type="button" class="x" id="cmClose">Cerrar</button></div>
+    <div>
+      <label class="lab" for="cmMonto">Monto</label>
+      <div class="money"><span>$</span><input id="cmMonto" inputmode="decimal" placeholder="0" aria-label="Monto en pesos"></div>
+    </div>
+    <div><label class="lab" for="cmNota">Nota (opcional)</label><textarea id="cmNota" placeholder="¿Qué fue? ¿Para quién?"></textarea></div>
+    <p id="cmErr" class="err" role="alert"></p>
+    <button type="submit" id="cmSave" class="save">Anotar gasto</button>
+    <div id="cmDelRow" hidden><button type="button" id="cmDel" class="del">Borrar este gasto</button></div>
+  </form>
+</div>
+
+<button id="fab" class="fab" type="button" hidden>+ Gasto</button>
 <div id="ptr" class="ptr" role="status" hidden>Desliza para actualizar</div>
 <div id="toast" class="toast" role="status" hidden></div>
 
@@ -404,7 +427,7 @@ function activa(ym,q){var d=CFG.desde||DEF.desde;return ym>d.mes||(ym===d.mes&&q
 function qValida(ym,q){return activa(ym,q)?q:(q===1?2:1)}
 function planDe(k,q,ym){if(!activa(ym,q))return 0;if(k==="pension")return CFG.pension["q"+q];var r=rubroDe(k);return r?(r["q"+q]||0):0}
 
-var S = { mes: hoy().slice(0,7), vista: "q"+qDe(hoy()), gastos: [], cargando: true, db: null, sinDb: false, unsub: null, timer: null, tok: 0, k: "", pagos: {}, filas: [], pag: "gastos", syncGen: 0, filtro: "", cierre: [] };
+var S = { mes: hoy().slice(0,7), vista: "q"+qDe(hoy()), gastos: [], cargando: true, db: null, sinDb: false, unsub: null, timer: null, tok: 0, k: "", pagos: {}, filas: [], pag: "gastos", syncGen: 0, filtro: "", cierre: [], cierreMovs: [], cFiltro: "" };
 try{ var v=localStorage.getItem("quincena.vista"); if(v==="mes") S.vista="mes"; }catch(e){}
 
 /* ---------- cálculos ---------- */
@@ -591,10 +614,10 @@ function renderLista(){
 
 /* ---------- datos: hoja de Google privada (Apps Script, con clave) ---------- */
 function norm(x){var o=Object.assign({},x);o.q=+o.q===1?1:2;o.monto=+o.monto||0;return o}
-function guardarCache(){try{localStorage.setItem("quincena.cfg",JSON.stringify(CFG));localStorage.setItem("quincena.filas",JSON.stringify(S.filas));localStorage.setItem("quincena.pagos",JSON.stringify(S.pagos));localStorage.setItem("quincena.cierre",JSON.stringify(S.cierre||[]));localStorage.setItem("quincena.m."+S.mes,JSON.stringify(S.gastos))}catch(e){}}
+function guardarCache(){try{localStorage.setItem("quincena.cfg",JSON.stringify(CFG));localStorage.setItem("quincena.filas",JSON.stringify(S.filas));localStorage.setItem("quincena.pagos",JSON.stringify(S.pagos));localStorage.setItem("quincena.cierre",JSON.stringify(S.cierre||[]));localStorage.setItem("quincena.cmovs",JSON.stringify(S.cierreMovs||[]));localStorage.setItem("quincena.m."+S.mes,JSON.stringify(S.gastos))}catch(e){}}
 function leerCache(){
   try{var c=JSON.parse(localStorage.getItem("quincena.cfg")||"null");if(c&&c.rubros)CFG=c}catch(e){}
-  try{S.filas=JSON.parse(localStorage.getItem("quincena.filas")||"[]")||[];S.pagos=JSON.parse(localStorage.getItem("quincena.pagos")||"{}")||{};S.cierre=JSON.parse(localStorage.getItem("quincena.cierre")||"[]")||[]}catch(e){}
+  try{S.filas=JSON.parse(localStorage.getItem("quincena.filas")||"[]")||[];S.pagos=JSON.parse(localStorage.getItem("quincena.pagos")||"{}")||{};S.cierre=JSON.parse(localStorage.getItem("quincena.cierre")||"[]")||[];S.cierreMovs=JSON.parse(localStorage.getItem("quincena.cmovs")||"[]")||[]}catch(e){}
   try{S.gastos=(JSON.parse(localStorage.getItem("quincena.m."+S.mes)||"[]")||[]).map(norm)}catch(e){S.gastos=[]}
 }
 function api(body){
@@ -610,7 +633,7 @@ function suscribir(){
     if(tk!==S.tok)return;
     if(gen!==S.syncGen){suscribir();return} /* se guardó algo mientras cargaba: vuelve a leer */
     if(o.cfg&&o.cfg.rubros)CFG=o.cfg;
-    if(o.filas)S.filas=o.filas; if(o.pagos)S.pagos=o.pagos; if(o.cierre)S.cierre=o.cierre;
+    if(o.filas)S.filas=o.filas; if(o.pagos)S.pagos=o.pagos; if(o.cierre)S.cierre=o.cierre; if(o.cierreMovs)S.cierreMovs=o.cierreMovs;
     S.gastos=aplicarCola((o.gastos||[]).map(norm)); S.cargando=false; ocultarBanner(); guardarCache(); render();
     if(S.pag==="cierre"&&!S.cEditando)pintarCierre();
     if(!Edirty)cargarEditor();
@@ -624,13 +647,15 @@ function suscribir(){
 }
 function mostrarBanner(t){var b=el("banner");b.textContent=t;b.hidden=false}
 function ocultarBanner(){el("banner").hidden=true}
-function bloquear(msg){el("app").hidden=true;el("lock").hidden=false;el("lockMsg").textContent=msg||""}
+function bloquear(msg){el("app").hidden=true;el("lock").hidden=false;el("lockMsg").textContent=msg||"";pintarFab()}
+/* el botón «+ Gasto» solo vive en «Mis gastos» y se esconde mientras hay una hoja abierta */
+function pintarFab(){el("fab").hidden=S.pag!=="gastos"||el("app").hidden||!el("sheet").hidden||!el("pagoSheet").hidden||!el("cmSheet").hidden}
 function iniciar(){
   var m=/[#&]k=([^&]+)/.exec(location.hash);
   if(m){S.k=decodeURIComponent(m[1]);try{localStorage.setItem("quincena.k",S.k)}catch(e){}}
   if(!S.k){try{S.k=localStorage.getItem("quincena.k")||""}catch(e){}}
   if(!S.k){bloquear("");return}
-  el("lock").hidden=true; el("app").hidden=false;
+  el("lock").hidden=true; el("app").hidden=false; pintarFab();
   suscribir(); sincronizar();
 }
 
@@ -761,7 +786,7 @@ function abrir(g,rubro){
   el("fDelRow").hidden=!g; desarmar();
   el("fErr").textContent=""; el("fSave").disabled=false;
   pintarRubros(); pintarQ();
-  el("scrim").hidden=false; el("sheet").hidden=false;
+  el("scrim").hidden=false; el("sheet").hidden=false; pintarFab();
   setTimeout(function(){ if(!g) el("fMonto").focus(); },60);
 }
 function defaultFecha(){
@@ -769,7 +794,7 @@ function defaultFecha(){
   if(h.slice(0,7)===S.mes) return h;
   return S.mes+(S.vista==="q2"?"-16":"-01");
 }
-function cerrar(){el("scrim").hidden=true;el("sheet").hidden=true;el("pagoSheet").hidden=true}
+function cerrar(){el("scrim").hidden=true;el("sheet").hidden=true;el("pagoSheet").hidden=true;el("cmSheet").hidden=true;pintarFab()}
 var armado=null;
 function desarmar(){var b=el("fDel");b.classList.remove("arm");b.textContent="Borrar este gasto";clearTimeout(armado)}
 
@@ -780,7 +805,8 @@ el("fQ2").onclick=function(){F.q=2;pintarQ()};
 el("fFecha").addEventListener("change",function(){var v=el("fFecha").value;if(v){if(!S.qFija)F.q=qValida(v.slice(0,7),qDe(v));pintarQ()}});
 el("fMonto").addEventListener("input",pintarSaldo);
 el("shClose").onclick=cerrar; el("scrim").onclick=cerrar;
-document.addEventListener("keydown",function(e){if(e.key==="Escape"&&(!el("sheet").hidden||!el("pagoSheet").hidden))cerrar()});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&(!el("sheet").hidden||!el("pagoSheet").hidden||!el("cmSheet").hidden))cerrar()});
+el("fab").onclick=function(){abrir(null)};
 el("cats").addEventListener("click",function(e){var b=e.target.closest(".cat");if(b)abrir(null,b.getAttribute("data-r"))});
 el("idle").addEventListener("click",function(e){var b=e.target.closest("[data-r]");if(b)abrir(null,b.getAttribute("data-r"))});
 el("list").addEventListener("click",function(e){
@@ -846,7 +872,7 @@ function abrirPago(qn){
   el("pgHint").textContent="Quincena "+qn+" de "+MESES[+ym.slice(5,7)-1]+". Con la fecha de tu pago cuento los días exactos que tiene que durar tu dinero.";
   el("pgFecha").value=f||(qn===1?ym+"-15":ym+"-"+pad(diasMes(ym)));
   el("pgDelRow").hidden=!f; el("pgErr").textContent=""; el("pgSave").disabled=false; el("pgSave").textContent="Guardar fecha";
-  el("scrim").hidden=false; el("pagoSheet").hidden=false;
+  el("scrim").hidden=false; el("pagoSheet").hidden=false; pintarFab();
 }
 function guardarPagoFecha(fecha){
   el("pgSave").disabled=true; el("pgSave").textContent="Guardando…";
@@ -898,7 +924,20 @@ function pintarSuma(){
     t+='<tr'+(tot?' class="tot"':'')+'><td>'+f[0]+'</td>'+[a,b,m].map(function(x){var v=x[f[1]];return cel($$(v),"g"+(tot?(v<-0.5?" bad":" ok"):""))}).join("")+'</tr>';
   });
   el("pSum").innerHTML=t+'</tbody>';
+  pintarPorRubro();
   el("pSave").disabled=!Edirty; el("pUndo").hidden=!Edirty;
+}
+/* presupuesto de cada rubro: Q1, Q2 y total del mes (se actualiza mientras editas) */
+function pintarPorRubro(){
+  var rs=ordenar((E||[]).filter(function(r){return r[0]==="rubro"}),function(r){return r[1]}), a=0,b=0;
+  var t='<thead><tr><th>Rubro</th><th class="g">Quincena 1</th><th class="g">Quincena 2</th><th class="g">Total</th></tr></thead><tbody>';
+  rs.forEach(function(r){
+    var x=+r[3]||0,y=+r[4]||0; a+=x; b+=y;
+    t+='<tr><td>'+(String(r[2]||"").trim()?esc(r[2]):'<span class="dim">Sin nombre</span>')+'</td>'+cel($$(x),"g"+(x?"":" dim"))+cel($$(y),"g"+(y?"":" dim"))+cel($$(x+y),"g"+(x+y?"":" dim"))+'</tr>';
+  });
+  if(!rs.length)t+='<tr><td colspan="4" class="dim">Cargando…</td></tr>';
+  else t+='<tr class="tot"><td>Total rubros</td>'+cel($$(a),"g")+cel($$(b),"g")+cel($$(a+b),"g")+'</tr>';
+  el("pRubTab").innerHTML=t+'</tbody>';
 }
 function editarCampo(t){
   var i=t.getAttribute("data-i");if(i===null||!E)return;i=+i;var f=+t.getAttribute("data-f");
@@ -948,6 +987,7 @@ function irA(p){
   document.querySelector(".monthnav").style.display=p==="gastos"?"":"none";
   if(p==="presupuesto"){if(!E||!Edirty)cargarEditor();pintarEditor()}
   if(p==="cierre")pintarCierre();
+  pintarFab();
   window.scrollTo(0,0);
 }
 el("t-gastos").onclick=function(){irA("gastos")};
@@ -984,7 +1024,8 @@ function tablaCierre(t){
     if(secs.length>1||ingreso)h+='<tr class="sub"><td class="sub" colspan="4">'+esc(sx.nombre)+'</td></tr>';
     sx.rows.forEach(function(r){
       var tiene=r.real!=null&&r.real!=="";
-      h+='<tr><td>'+esc(r.concepto)+'</td>'+cel($$(+r.presupuesto||0),"g")+
+      var nm=ingreso?esc(r.concepto):'<button type="button" class="cbtn" data-cm="'+escA(r.clave)+'" aria-label="Anotar un gasto en '+escA(r.concepto)+'">'+esc(r.concepto)+'<span class="mas" aria-hidden="true">+</span></button>';
+      h+='<tr><td>'+nm+'</td>'+cel($$(+r.presupuesto||0),"g")+
         '<td class="real"><input class="cin" inputmode="decimal" data-c="'+escA(r.clave)+'" value="'+(tiene?Math.round(+r.real):"")+'" placeholder="—" aria-label="Real de '+escA(r.concepto)+'"></td>'+
         celDif(+r.presupuesto||0,tiene?+r.real:0,ingreso,tiene)+'</tr>';
     });
@@ -1001,7 +1042,96 @@ function tablaCierre(t){
   }
   return h+'</tbody>';
 }
-function pintarCierre(){el("cT1").innerHTML=tablaCierre(1);el("cT2").innerHTML=tablaCierre(2)}
+function pintarCierre(){el("cT1").innerHTML=tablaCierre(1);el("cT2").innerHTML=tablaCierre(2);pintarMovsCierre()}
+function filaCierre(k){return (S.cierre||[]).filter(function(r){return r.clave===k})[0]}
+function movCierre(id){return (S.cierreMovs||[]).filter(function(x){return x.id===id})[0]}
+/* movimientos del cierre, con filtro por rubro */
+function pintarMovsCierre(){
+  var conc=(S.cierre||[]).filter(function(r){return r.tabla===1});
+  var opts=[["","Todos los rubros"]].concat(conc.map(function(r){return [r.clave,r.concepto]}));
+  if(S.cFiltro&&!opts.some(function(o){return o[0]===S.cFiltro}))S.cFiltro="";
+  el("cmFiltro").innerHTML=opts.map(function(o){return '<option value="'+escA(o[0])+'"'+(o[0]===(S.cFiltro||"")?" selected":"")+'>'+esc(o[1])+'</option>'}).join("");
+  var xs=(S.cierreMovs||[]).filter(function(x){return !S.cFiltro||x.clave===S.cFiltro}).slice().sort(function(a,b){
+    return a.fecha<b.fecha?1:a.fecha>b.fecha?-1:(String(b.creado||"")>String(a.creado||"")?1:-1);
+  });
+  el("cmMovTitle").textContent="Movimientos"+(xs.length?" ("+xs.length+")":"");
+  var L=el("cmList");
+  if(!xs.length){L.innerHTML='<div class="empty">'+(S.cFiltro?"No hay movimientos de este rubro.":"Todavía no hay gastos del cierre. Toca un concepto de la tabla de gastos para anotar el primero.")+'</div>';return}
+  L.innerHTML=xs.map(function(x){
+    var r=filaCierre(x.clave)||{concepto:x.clave}, f=String(x.fecha||""), mi=+f.slice(5,7)-1;
+    return '<button class="mv" data-cmid="'+escA(x.id)+'"><div class="day"><b>'+(+f.slice(8,10)||"")+'</b><span>'+(MES3[mi]||"")+'</span></div>'+
+      '<div class="info"><div class="nm">'+esc(r.concepto)+'</div><div class="nt">'+(x.nota?esc(x.nota):'<span style="opacity:.6">sin nota</span>')+'</div></div>'+
+      '<div class="amt num">'+$$(x.monto)+'</div></button>';
+  }).join("");
+}
+el("cmFiltro").addEventListener("change",function(){S.cFiltro=this.value;pintarMovsCierre()});
+
+/* hoja para anotar un gasto del cierre: se suma al real del concepto */
+var CM={clave:null,id:null}, cmArmado=null;
+function numDe(v){return parseFloat(String(v).replace(/[$,\s]/g,""))}
+function pintarCmSaldo(){
+  var r=filaCierre(CM.clave), b=el("cmSaldo"); if(!r){b.hidden=true;return}
+  var antes=(+r.presupuesto||0)-(+r.real||0), mv=CM.id?movCierre(CM.id):null, m=numDe(el("cmMonto").value), con=m>0;
+  var despues=antes-(con?m-(mv?mv.monto:0):0);
+  b.className="saldo"+(despues<-0.5?" bad":"");
+  b.innerHTML='<small>Queda del presupuesto</small><b class="num">'+$$(antes)+'</b>'+(con?'<small class="num">después: '+$$(despues)+'</small>':'');
+  b.hidden=false;
+}
+function cmDesarmar(){var b=el("cmDel");b.classList.remove("arm");b.textContent="Borrar este gasto";clearTimeout(cmArmado)}
+function abrirCm(k,mv){
+  var r=filaCierre(k); if(!r)return;
+  CM.clave=k; CM.id=mv?mv.id:null;
+  el("cmTitle").textContent=(mv?"Editar · ":"")+r.concepto;
+  el("cmMonto").value=mv?String(mv.monto):""; el("cmNota").value=mv?(mv.nota||""):"";
+  el("cmSave").textContent=mv?"Guardar cambios":"Anotar gasto"; el("cmSave").disabled=false;
+  el("cmDelRow").hidden=!mv; cmDesarmar(); el("cmErr").textContent="";
+  pintarCmSaldo();
+  el("scrim").hidden=false; el("cmSheet").hidden=false; pintarFab();
+  setTimeout(function(){if(!mv)el("cmMonto").focus()},60);
+}
+function cmFallo(r,txt){el("cErr").textContent="No se guardó "+txt+(r?" de "+r.concepto:"")+". Revisa tu conexión y vuelve a intentarlo."}
+el("cmMonto").addEventListener("input",pintarCmSaldo);
+el("cmClose").onclick=cerrar;
+el("pCierre").addEventListener("click",function(e){var b=e.target.closest("[data-cm]");if(b)abrirCm(b.getAttribute("data-cm"))});
+el("cmList").addEventListener("click",function(e){
+  var b=e.target.closest("[data-cmid]");if(!b)return;
+  var mv=movCierre(b.getAttribute("data-cmid"));if(!mv)return;
+  if(esTmp(mv.id)){toast("Todavía se está guardando; intenta en un momento.");return}
+  abrirCm(mv.clave,mv);
+});
+el("cmFrm").addEventListener("submit",function(e){
+  e.preventDefault();
+  var monto=Math.round(numDe(el("cmMonto").value)*100)/100, nota=el("cmNota").value.trim();
+  if(!(monto>0)){el("cmErr").textContent="Escribe el monto del gasto, por ejemplo 2500.";el("cmMonto").focus();return}
+  var r=filaCierre(CM.clave); if(!r)return;
+  var id=CM.id, mv=id?movCierre(id):null, antesReal=r.real, viejo=mv?{monto:mv.monto,nota:mv.nota}:null;
+  r.real=Math.round(((+r.real||0)+monto-(mv?mv.monto:0))*100)/100;
+  if(mv){mv.monto=monto;mv.nota=nota}
+  else {mv={id:tmpId(),fecha:hoy(),clave:CM.clave,monto:monto,nota:nota,creado:new Date().toISOString()};S.cierreMovs.push(mv)}
+  el("cErr").textContent=""; guardarCache(); cerrar(); pintarCierre();
+  toast((id?"Guardado: ":"Anotado: ")+$$(monto)+" en "+r.concepto);
+  var body=id?{action:"cierreMovSave",id:id,monto:monto,nota:nota}:{action:"cierreMov",clave:CM.clave,monto:monto,nota:nota,fecha:mv.fecha};
+  api(body).then(function(o){
+    if(!id)mv.id=o.id; r.real=o.real; guardarCache(); if(!S.cEditando)pintarCierre();
+  }).catch(function(){
+    r.real=antesReal;
+    if(id){mv.monto=viejo.monto;mv.nota=viejo.nota} else S.cierreMovs=S.cierreMovs.filter(function(x){return x!==mv});
+    guardarCache(); pintarCierre(); cmFallo(r,"el gasto");
+  });
+});
+el("cmDel").onclick=function(){
+  var b=el("cmDel");
+  if(!b.classList.contains("arm")){b.classList.add("arm");b.textContent="¿Seguro? Toca otra vez para borrar";cmArmado=setTimeout(cmDesarmar,4000);return}
+  cmDesarmar();
+  var mv=movCierre(CM.id), r=filaCierre(CM.clave); if(!mv)return;
+  var antesReal=r?r.real:null;
+  S.cierreMovs=S.cierreMovs.filter(function(x){return x!==mv});
+  if(r){var v=Math.round(((+r.real||0)-mv.monto)*100)/100;r.real=v>0.004?v:null}
+  guardarCache(); cerrar(); pintarCierre(); toast("Gasto borrado");
+  api({action:"cierreMovDel",id:mv.id}).then(function(o){if(r){r.real=o.real;guardarCache();if(!S.cEditando)pintarCierre()}}).catch(function(){
+    S.cierreMovs.push(mv); if(r)r.real=antesReal; guardarCache(); pintarCierre(); cmFallo(r,"el borrado");
+  });
+};
 el("pCierre").addEventListener("focusin",function(){S.cEditando=true});
 el("pCierre").addEventListener("focusout",function(){S.cEditando=false});
 el("pCierre").addEventListener("change",function(e){
@@ -1031,7 +1161,7 @@ el("mNext").onclick=function(){S.mes=mover(S.mes,1);suscribir()};
 var PT={y0:null,x0:0,d:0}, UMBRAL=120;
 function ptrPos(px){var p=el("ptr");p.style.transform="translate(-50%,"+Math.round(px-60)+"px)"}
 window.addEventListener("touchstart",function(e){
-  var abierto=!el("sheet").hidden||!el("pagoSheet").hidden;
+  var abierto=!el("sheet").hidden||!el("pagoSheet").hidden||!el("cmSheet").hidden;
   if(window.scrollY>2||abierto||e.touches.length>1){PT.y0=null;return}
   PT.y0=e.touches[0].clientY; PT.x0=e.touches[0].clientX; PT.d=0;
 },{passive:true});

@@ -40,6 +40,8 @@ const HOJA_P = "Presupuesto";
 const HOJA_C = "Cierre de año";
 const COLS_C = ["tabla", "seccion", "clave", "concepto", "presupuesto", "real"];
 const HOJA_CM = "Cierre movimientos";
+const HOJA_R = "Reportes";
+const COLS_R = ["id", "fecha", "rubro", "sub", "monto", "nota", "reportado", "creado"];
 const COLS_CM = ["id", "fecha", "clave", "monto", "nota", "creado"];
 const COLS = ["id", "fecha", "mes", "quincena", "rubro", "sub", "monto", "nota", "creado", "editado"];
 
@@ -91,9 +93,13 @@ function doPost(e) {
     const d = JSON.parse(e.postData.contents);
     checar(d.k);
     switch (d.action) {
-      case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), cierre: filasCierre(), cierreMovs: movsCierre(), gastos: leer(String(d.mes || "")) }; break; }
+      case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), cierre: filasCierre(), cierreMovs: movsCierre(), reportes: reportes(), gastos: leer(String(d.mes || "")) }; break; }
       case "savePresupuesto": { guardarPresupuesto(d.filas); const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f }; break; }
       case "cierreReal": guardarRealCierre(String(d.clave || ""), d.real); out = { ok: true }; break;
+      case "repAdd": out = { ok: true, id: agregarRep(d.doc) }; break;
+      case "repSave": guardarRep(String(d.id || ""), d.doc); out = { ok: true }; break;
+      case "repMarcar": out = { ok: true, reportado: marcarRep(String(d.id || ""), !!d.si) }; break;
+      case "repDel": borrarRep(String(d.id || "")); out = { ok: true }; break;
       case "cierrePresupuesto": guardarPresupuestoCierre(d.valores); out = { ok: true, cierre: filasCierre() }; break;
       case "cierreMov": out = Object.assign({ ok: true }, agregarMovCierre(d)); break;
       case "cierreMovSave": out = Object.assign({ ok: true }, editarMovCierre(String(d.id || ""), d)); break;
@@ -403,5 +409,74 @@ function guardarPresupuestoCierre(valores) {
     const n = sh.getLastRow() - 1, claves = sh.getRange(2, 3, n, 1).getValues(), pres = sh.getRange(2, 5, n, 1).getValues();
     for (let i = 0; i < n; i++) { const k = String(claves[i][0]).trim(); if (Object.prototype.hasOwnProperty.call(vals, k)) pres[i][0] = vals[k]; }
     sh.getRange(2, 5, n, 1).setValues(pres);
+  });
+}
+
+/* Reportes pendientes: gastos que hay que reportar (no cuentan en la quincena).
+   «reportado» queda vacío mientras está pendiente; al marcarlo guarda la fecha. */
+function hojaRep() {
+  const ss = libro();
+  let sh = ss.getSheetByName(HOJA_R);
+  if (!sh) {
+    sh = ss.insertSheet(HOJA_R);
+    sh.getRange("A:B").setNumberFormat("@");
+    sh.getRange("G:G").setNumberFormat("@");
+    sh.getRange(1, 1, 1, COLS_R.length).setValues([COLS_R]).setFontWeight("bold");
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function reportes() {
+  const ss = libro(), sh = ss.getSheetByName(HOJA_R), tz = ss.getSpreadsheetTimeZone();
+  if (!sh || sh.getLastRow() < 2) return [];
+  const f = function (v) { return v instanceof Date ? Utilities.formatDate(v, tz, "yyyy-MM-dd") : String(v || "").slice(0, 10); };
+  return sh.getRange(2, 1, sh.getLastRow() - 1, COLS_R.length).getValues()
+    .filter(function (r) { return String(r[0]).trim(); })
+    .map(function (r) {
+      return {
+        id: String(r[0]), fecha: f(r[1]), rubro: String(r[2]), sub: String(r[3] || ""), monto: Number(r[4]) || 0,
+        nota: String(r[5] || ""), reportado: f(r[6]), creado: r[7] instanceof Date ? r[7].toISOString() : String(r[7] || "")
+      };
+    });
+}
+
+function validarRep(doc) {
+  doc = doc || {};
+  const rubro = String(doc.rubro || "");
+  if (!/^[a-z0-9_-]{2,24}$/.test(rubro)) throw new Error("Rubro inválido.");
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(doc.fecha || "")) ? String(doc.fecha) : Utilities.formatDate(new Date(), libro().getSpreadsheetTimeZone(), "yyyy-MM-dd");
+  return [fecha, rubro, limpio(doc.sub, 30), montoMov(doc.monto), limpio(doc.nota, 500)];
+}
+
+function agregarRep(doc) {
+  const v = validarRep(doc), id = Utilities.getUuid().replace(/-/g, "").slice(0, 16);
+  conCandado(function () { hojaRep().appendRow([id].concat(v).concat(["", new Date().toISOString()])); });
+  return id;
+}
+
+function guardarRep(id, doc) {
+  const v = validarRep(doc);
+  conCandado(function () {
+    const sh = hojaRep(), r = filaDe(sh, id);
+    if (r < 0) throw new Error("Ese gasto ya no existe.");
+    sh.getRange(r, 2, 1, v.length).setValues([v]);
+  });
+}
+
+function marcarRep(id, si) {
+  const v = si ? Utilities.formatDate(new Date(), libro().getSpreadsheetTimeZone(), "yyyy-MM-dd") : "";
+  conCandado(function () {
+    const sh = hojaRep(), r = filaDe(sh, id);
+    if (r < 0) throw new Error("Ese gasto ya no existe.");
+    sh.getRange(r, 7).setValue(v);
+  });
+  return v;
+}
+
+function borrarRep(id) {
+  conCandado(function () {
+    const sh = hojaRep(), r = filaDe(sh, id);
+    if (r >= 0) sh.deleteRow(r);
   });
 }

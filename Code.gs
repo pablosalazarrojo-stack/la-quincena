@@ -93,7 +93,7 @@ function doPost(e) {
     const d = JSON.parse(e.postData.contents);
     checar(d.k);
     switch (d.action) {
-      case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), cierre: filasCierre(), cierreMovs: movsCierre(), reportes: reportes(), gastos: leer(String(d.mes || "")) }; break; }
+      case "load": { const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f, pagos: pagos(), activa: props().getProperty("ACTIVA") || "", cierre: filasCierre(), cierreMovs: movsCierre(), reportes: reportes(), gastos: leer(String(d.mes || "")) }; break; }
       case "savePresupuesto": { guardarPresupuesto(d.filas); const f = filasP(); out = { ok: true, cfg: cfgDe(f), filas: f }; break; }
       case "cierreReal": guardarRealCierre(String(d.clave || ""), d.real); out = { ok: true }; break;
       case "repAdd": out = { ok: true, id: agregarRep(d.doc) }; break;
@@ -104,6 +104,7 @@ function doPost(e) {
       case "cierreMov": out = Object.assign({ ok: true }, agregarMovCierre(d)); break;
       case "cierreMovSave": out = Object.assign({ ok: true }, editarMovCierre(String(d.id || ""), d)); break;
       case "cierreMovDel": out = Object.assign({ ok: true }, borrarMovCierre(String(d.id || ""))); break;
+      case "activa": out = { ok: true, activa: guardarActiva(String(d.valor || "")) }; break;
       case "pago": guardarPago(String(d.clave || ""), String(d.fecha || "")); out = { ok: true, pagos: pagos() }; break;
       case "add": out = { ok: true, id: agregar(d.doc) }; break;
       case "save": guardar(String(d.id || ""), d.doc); out = { ok: true }; break;
@@ -162,7 +163,9 @@ function validar(doc) {
   if (!/^[a-z0-9_-]{2,24}$/.test(rubro)) throw new Error("Rubro inválido.");
   const monto = Math.round(Number(doc.monto) * 100) / 100;
   if (!(monto > 0 && monto < 10000000)) throw new Error("Monto inválido.");
-  return [fecha, fecha.slice(0, 7), Number(doc.q) === 1 ? 1 : 2, rubro, limpio(doc.sub, 30), monto, limpio(doc.nota, 500)];
+  // el gasto cuenta en el mes de la quincena (puede ser el siguiente si la quincena se terminó antes)
+  const mes = /^\d{4}-\d{2}$/.test(String(doc.mes || "")) ? String(doc.mes) : fecha.slice(0, 7);
+  return [fecha, mes, Number(doc.q) === 1 ? 1 : 2, rubro, limpio(doc.sub, 30), monto, limpio(doc.nota, 500)];
 }
 
 function agregar(doc) {
@@ -261,6 +264,14 @@ function guardarPresupuesto(filas) {
 /* Fecha del siguiente pago de cada quincena, por ejemplo {"2026-11-2": "2026-11-28"}. */
 function pagos() {
   try { return JSON.parse(props().getProperty("PAGOS") || "{}"); } catch (e) { return {}; }
+}
+/* «Quincena terminada»: la quincena en curso, si va adelantada al calendario ("YYYY-MM-q"; vacío = la del calendario) */
+function guardarActiva(valor) {
+  if (valor && !/^\d{4}-\d{2}-[12]$/.test(valor)) throw new Error("Quincena inválida.");
+  conCandado(function () {
+    if (valor) props().setProperty("ACTIVA", valor); else props().deleteProperty("ACTIVA");
+  });
+  return valor;
 }
 function guardarPago(clave, fecha) {
   if (!/^\d{4}-\d{2}-[12]$/.test(clave)) throw new Error("Quincena inválida.");

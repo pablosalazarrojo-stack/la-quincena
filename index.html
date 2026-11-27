@@ -94,6 +94,12 @@ header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .chip.pbtn.paid{background:var(--basil);border-color:var(--basil);color:#F3FFF4}
 .chip.pbtn.arm{background:var(--onColor);color:var(--lemon)}
 .chip.pbtn:disabled{opacity:.6;cursor:default}
+.finq{display:flex;gap:8px;flex-wrap:wrap}
+.finq button{flex:1 1 auto;border:2px solid var(--onColor);background:transparent;color:inherit;font-family:inherit;font-size:16px;font-weight:600;border-radius:16px;padding:10px 14px;cursor:pointer}
+.finq button.arm{background:var(--onColor);color:var(--lemon)}
+.finq button.sec{flex:0 1 auto;font-size:14px;font-weight:500;border-style:dashed}
+.finq button:active{transform:scale(.98)}
+.hero.over .finq button{border-color:#FFF4EE}
 .hero.over .chip.pbtn{border-color:#FFF4EE}
 .chip.dark.neg,.hero.over .chip.dark.neg{background:var(--tomato);color:#FFF4EE}
 
@@ -486,6 +492,20 @@ function planDe(k,q,ym){if(!activa(ym,q))return 0;if(k==="pension")return CFG.pe
 
 var S = { mes: hoy().slice(0,7), vista: "q"+qDe(hoy()), gastos: [], cargando: true, db: null, sinDb: false, unsub: null, timer: null, tok: 0, k: "", pagos: {}, filas: [], pag: "gastos", syncGen: 0, filtro: "", cierre: [], cierreMovs: [], cFiltro: "", reportes: [] };
 try{ var v=localStorage.getItem("quincena.vista"); if(v==="mes") S.vista="mes"; }catch(e){}
+/* «Quincena terminada»: la quincena en curso puede ir adelantada al calendario */
+function qKey(o){return o.mes+"-"+o.q}
+function qSig(o){return o.q===1?{mes:o.mes,q:2}:{mes:mover(o.mes,1),q:1}}
+function qAnt(o){return o.q===2?{mes:o.mes,q:1}:{mes:mover(o.mes,-1),q:2}}
+function qCmp(a,b){return a.mes<b.mes?-1:a.mes>b.mes?1:a.q-b.q}
+function qFecha(){var h=hoy();return {mes:h.slice(0,7),q:qDe(h)}}
+function qNombre(o){return "la quincena "+o.q+" de "+MESES[+o.mes.slice(5,7)-1]}
+function qActiva(){
+  var f=qFecha(), a=/^\d{4}-\d{2}-[12]$/.test(S.activa||"")?{mes:S.activa.slice(0,7),q:+S.activa.slice(8)}:null;
+  var r=(a&&qCmp(a,f)>0)?a:f, d=CFG.desde||DEF.desde;
+  return qCmp(r,d)<0?{mes:d.mes,q:d.q}:r;
+}
+try{S.activa=localStorage.getItem("quincena.activa")||""}catch(e){S.activa=""}
+(function(){var qa=qActiva();S.mes=qa.mes;if(S.vista!=="mes")S.vista="q"+qa.q})();
 
 /* ---------- cálculos ---------- */
 function calc(){
@@ -550,20 +570,26 @@ function render(){
   var esMesActual=hoyS.slice(0,7)===ym, dHoy=+hoyS.slice(8,10);
   var nombre=S.vista==="mes"?MESES[mi]:(S.vista==="q1"?"la quincena 1":"la quincena 2");
   var fin=S.vista==="q1"?15:dm, ini=(S.vista==="q2"&&a1)?16:1;
-  var chips=[];
-  if(esMesActual && dHoy>=ini && dHoy<=fin){
-    if(S.vista==="mes"){
-      var dm2=fin-dHoy+1; chips.push('<span class="chip">Faltan '+dm2+(dm2===1?" día":" días")+' del mes</span>');
-    } else {
-      var qn0=S.vista==="q1"?1:2, pf=S.pagos[ym+"-"+qn0], lbl0;
+  var chips=[], QA=qActiva(), finq="";
+  if(S.vista==="mes"){
+    if(esMesActual && dHoy>=ini && dHoy<=fin){var dm2=fin-dHoy+1; chips.push('<span class="chip">Faltan '+dm2+(dm2===1?" día":" días")+' del mes</span>')}
+    else if(qCmp({mes:ym,q:2},QA)<0) chips.push('<span class="chip">Ya cerró</span>');
+  } else {
+    var qn0=S.vista==="q1"?1:2, cmpQ=qCmp({mes:ym,q:qn0},QA);
+    if(cmpQ===0){
+      var pf=S.pagos[ym+"-"+qn0], lbl0;
       if(pf){var dd=diasEntre(hoyS,pf);lbl0=dd>1?"Faltan "+dd+" días para tu pago ("+fechaCorta(pf)+")":dd===1?"Mañana es tu pago ("+fechaCorta(pf)+")":dd===0?"Hoy es tu pago":"Tu pago fue el "+fechaCorta(pf)}
-      else {var dr=fin-dHoy+1;lbl0="Faltan "+dr+(dr===1?" día":" días")+" · pon la fecha de tu pago"}
+      else {var dr=diasEntre(hoyS,ym+"-"+pad(fin))+1;lbl0=dr>=1?"Faltan "+dr+(dr===1?" día":" días")+" · pon la fecha de tu pago":"Pon la fecha de tu pago"}
       chips.push('<button type="button" class="chip pbtn" data-pago="'+qn0+'">'+lbl0+' ✎</button>');
-    }
-  } else if(esMesActual && dHoy<ini){
-    chips.push('<span class="chip">Empieza el día '+ini+'</span>');
-  } else if(ym<hoyS.slice(0,7) || (esMesActual && dHoy>fin)){
-    chips.push('<span class="chip">Ya cerró</span>');
+    } else if(cmpQ<0) chips.push('<span class="chip">Ya cerró</span>');
+    else chips.push('<span class="chip">Todavía no empieza</span>');
+  }
+  /* botón «Quincena terminada» en la quincena en curso (y «regresar» si te adelantaste) */
+  if((S.vista==="mes"&&QA.mes===ym)||(S.vista!=="mes"&&qCmp({mes:ym,q:S.vista==="q1"?1:2},QA)===0)){
+    var sig=qSig(QA), armF=S.finArm==="fin";
+    finq+='<button type="button" data-finq="fin"'+(armF?' class="arm"':'')+'>'+(armF?"¿Seguro? Toca otra vez y empieza "+esc(qNombre(sig)):(S.vista==="mes"?"Quincena "+QA.q+" terminada":"Quincena terminada")+" ✓")+'</button>';
+    if(qCmp(QA,qFecha())>0){var ant=qAnt(QA), armV=S.finArm==="volver";
+      finq+='<button type="button" class="sec'+(armV?' arm':'')+'" data-finq="volver">'+(armV?"¿Regresar? Toca otra vez":"↩ Regresar a "+esc(qNombre(ant)))+'</button>'}
   }
   if(V.fijosPend.length){
     chips.push('<span class="chip">Por pagar: '+V.fijosPend.map(function(x){return esc(x.r.n)+" "+$$(x.plan-x.gas)}).join(", ")+'</span>');
@@ -582,7 +608,7 @@ function render(){
     '<div class="big num">'+$$(Math.abs(queda))+'</div>'+
     '<div class="sub num">Llevas '+$$(V.gas)+' de '+$$(V.plan)+' en gastos'+(S.cargando?' · cargando…':'')+'</div>'+
     '<div class="hbar" aria-hidden="true"><i style="width:'+(pct*100).toFixed(1)+'%"></i></div>'+
-    '<div class="chips">'+chips.join("")+'</div>';
+    '<div class="chips">'+chips.join("")+'</div>'+(finq?'<div class="finq">'+finq+'</div>':'');
 
   /* rubros */
   var act=ordenar(V.rs.filter(function(x){return x.plan>0||x.gas>0}),function(x){return x.r.k});
@@ -662,7 +688,8 @@ function renderLista(){
   if(!xs.length){L.innerHTML='<div class="empty">Todavía no hay gastos en este periodo. Toca un rubro de arriba para anotar el primero; tarda cinco segundos.</div>';return}
   L.innerHTML=xs.map(function(x){
     var r=rubroDe(x.rubro)||{n:x.rubro}, mi=+x.fecha.slice(5,7)-1;
-    var qOtra=(x.q!==qDe(x.fecha))?' · cuenta en Q'+x.q:'';
+    var otroMes=x.mes&&x.mes!==x.fecha.slice(0,7);
+    var qOtra=(otroMes||x.q!==qDe(x.fecha))?' · cuenta en Q'+x.q+(otroMes?' de '+MES3[+x.mes.slice(5,7)-1]:''):'';
     return '<button class="mv" data-id="'+esc(x.id)+'"><div class="day"><b>'+(+x.fecha.slice(8,10))+'</b><span>'+MES3[mi]+'</span></div>'+
       '<div class="info"><div class="nm">'+esc(r.n)+(x.sub?' · '+esc(x.sub):'')+'</div><div class="nt">'+(x.nota?esc(x.nota):'<span style="opacity:.6">sin nota</span>')+qOtra+'</div></div>'+
       '<div class="amt num">'+$$(x.monto)+'</div></button>';
@@ -684,12 +711,17 @@ function api(body){
     .then(function(o){if(!o||!o.ok){var e=new Error((o&&o.error)||"Error");e.code=o&&o.code;e.servidor=true;throw e}return o});
 }
 function suscribir(){
-  var mes=S.mes, tk=++S.tok, gen=S.syncGen;
+  var mes=S.mes, tk=++S.tok, gen=S.syncGen, ag=S.activaGen||0;
   S.cargando=true; leerCache(); S.gastos=aplicarCola(S.gastos); render();
   api({action:"load",mes:mes}).then(function(o){
     if(tk!==S.tok)return;
     if(gen!==S.syncGen){suscribir();return} /* se guardó algo mientras cargaba: vuelve a leer */
     if(o.cfg&&o.cfg.rubros)CFG=o.cfg;
+    /* ignora lo que traiga la carga si cambiaste de quincena mientras cargaba */
+    if(typeof o.activa==="string"&&!S.activaPend&&ag===(S.activaGen||0)&&o.activa!==(S.activa||"")){
+      S.activa=o.activa; try{localStorage.setItem("quincena.activa",o.activa)}catch(e){}
+      if(!S.navego){var qa=qActiva(); if(S.vista!=="mes")S.vista="q"+qa.q; if(qa.mes!==mes){S.mes=qa.mes;suscribir();return}}
+    }
     if(o.filas)S.filas=o.filas; if(o.pagos)S.pagos=o.pagos; if(o.cierre)S.cierre=o.cierre; if(o.cierreMovs)S.cierreMovs=o.cierreMovs; if(o.reportes)S.reportes=o.reportes;
     S.gastos=aplicarCola((o.gastos||[]).map(norm)); S.cargando=false; ocultarBanner(); guardarCache(); render();
     if(S.pag==="cierre"&&!S.cEditando)pintarCierre();
@@ -809,14 +841,14 @@ function pintarRubros(){
   pintarSaldo();
 }
 function pintarQ(){
-  var f=el("fFecha").value, ym=f?f.slice(0,7):S.mes;
+  var ym=F.mes||S.mes;
   el("fQ1").disabled=!activa(ym,1); el("fQ2").disabled=!activa(ym,2);
   el("fQ1").setAttribute("aria-pressed",String(F.q===1));el("fQ2").setAttribute("aria-pressed",String(F.q===2));
   pintarSaldo();
 }
 /* saldo del rubro elegido en la quincena elegida, a la derecha del título */
 function pintarSaldo(){
-  var b=el("fSaldo"), f=el("fFecha").value, ym=f?f.slice(0,7):"";
+  var b=el("fSaldo"), ym=F.mes||"";
   if(!F.rubro||ym!==S.mes||S.cargando){b.hidden=true;return}
   var gas=0;
   S.gastos.forEach(function(x){if(x.id!==F.id&&x.q===F.q&&(rubroDe(x.rubro)?x.rubro:"otros")===F.rubro)gas+=+x.monto||0});
@@ -832,7 +864,9 @@ function abrir(g,rubro){
   F.id=g?g.id:null; F.creado=g?g.creado:null;
   F.rubro=g?g.rubro:(rubro||null); F.sub=g?(g.sub||null):null;
   var f=g?g.fecha:hoy();
-  el("fFecha").value=f; F.q=g?g.q:qValida(f.slice(0,7),S.vista==="q1"?1:S.vista==="q2"?2:qDe(f));
+  var QA0=qActiva();
+  F.mes=g?(g.mes||f.slice(0,7)):S.mes;
+  el("fFecha").value=f; F.q=g?g.q:qValida(F.mes,S.vista==="q1"?1:S.vista==="q2"?2:(QA0.mes===S.mes?QA0.q:qDe(f)));
   S.qFija=S.vista!=="mes"; el("fQWrap").hidden=S.qFija;
   el("fRubrosWrap").hidden=!g&&!!F.rubro; el("fFechaWrap").hidden=!g;
   el("fRow2").hidden=el("fQWrap").hidden&&el("fFechaWrap").hidden;
@@ -860,7 +894,7 @@ el("fRubros").addEventListener("click",function(e){var b=e.target.closest("butto
 el("fSubs").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;var s=b.getAttribute("data-s");F.sub=(F.sub===s)?null:s;pintarRubros()});
 el("fQ1").onclick=function(){F.q=1;pintarQ()};
 el("fQ2").onclick=function(){F.q=2;pintarQ()};
-el("fFecha").addEventListener("change",function(){var v=el("fFecha").value;if(v){if(!S.qFija)F.q=qValida(v.slice(0,7),qDe(v));pintarQ()}});
+el("fFecha").addEventListener("change",function(){var v=el("fFecha").value;if(v){F.mes=v.slice(0,7);if(!S.qFija)F.q=qValida(v.slice(0,7),qDe(v));else F.q=qValida(F.mes,F.q);pintarQ()}});
 el("fMonto").addEventListener("input",pintarSaldo);
 el("shClose").onclick=cerrar; el("scrim").onclick=cerrar;
 document.addEventListener("keydown",function(e){if(e.key==="Escape"&&(!el("sheet").hidden||!el("pagoSheet").hidden||!el("cmSheet").hidden||!el("cpSheet").hidden||!el("rpSheet").hidden))cerrar()});
@@ -879,7 +913,8 @@ el("frm").addEventListener("submit",function(e){
   if(!F.rubro){el("fErr").textContent="Elige el rubro del gasto.";return}
   if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){el("fErr").textContent="Elige la fecha del gasto.";return}
   var rr=rubroDe(F.rubro), sub=(rr&&rr.subs&&rr.subs.indexOf(F.sub)>=0)?F.sub:"";
-  var doc={fecha:fecha,mes:fecha.slice(0,7),q:qValida(fecha.slice(0,7),F.q),rubro:F.rubro,sub:sub,monto:monto,nota:nota,creado:F.creado||new Date().toISOString()};
+  var mesG=F.mes||fecha.slice(0,7);
+  var doc={fecha:fecha,mes:mesG,q:qValida(mesG,F.q),rubro:F.rubro,sub:sub,monto:monto,nota:nota,creado:F.creado||new Date().toISOString()};
   if(F.id) doc.editado=new Date().toISOString();
   var r=rubroDe(F.rubro), msg=(F.id?"Guardado: ":"Anotado: ")+$$(monto)+" en "+r.n+(sub?" · "+sub:"")+(doc.mes!==S.mes?" ("+MESES[+doc.mes.slice(5,7)-1]+")":"");
   var editId=F.id, id=opGuardar(doc,editId);
@@ -917,7 +952,30 @@ function pensionToggle(qn){
     .then(function(){toast("Pensión de la Q"+qn+" de vuelta a «por pagar»")},function(){toast("No se pudo desmarcar. Intenta otra vez.")})
     .then(function(){S.pensBusy=false;render()});
 }
+function armarFin(k){S.finArm=k;clearTimeout(S.finT);S.finT=setTimeout(function(){S.finArm=null;render()},4000);render()}
+function cambiarActiva(destino,msg){
+  var antes=S.activa||"", f=qFecha(), valor=qCmp(destino,f)>0?qKey(destino):"";
+  S.activa=valor; try{localStorage.setItem("quincena.activa",valor)}catch(e){}
+  S.activaGen=(S.activaGen||0)+1; S.activaPend=true;
+  clearTimeout(S.finT); S.finArm=null;
+  var qa=qActiva(); S.vista="q"+qa.q; try{localStorage.setItem("quincena.vista","")}catch(e){}
+  if(qa.mes!==S.mes){S.mes=qa.mes;suscribir()}else render();
+  window.scrollTo(0,0); toast(msg);
+  api({action:"activa",valor:valor}).then(function(o){S.activaPend=false;S.activaGen++;S.activa=o.activa||"";try{localStorage.setItem("quincena.activa",S.activa)}catch(e){}}).catch(function(){
+    S.activaPend=false; S.activaGen++; S.activa=antes; try{localStorage.setItem("quincena.activa",antes)}catch(e){}
+    var q2=qActiva(); S.vista="q"+q2.q; if(q2.mes!==S.mes){S.mes=q2.mes;suscribir()}else render();
+    toast("No se guardó el cambio de quincena. Revisa tu conexión y vuelve a intentarlo.");
+  });
+}
 el("hero").addEventListener("click",function(e){
+  var fq=e.target.closest("[data-finq]");
+  if(fq){
+    var k=fq.getAttribute("data-finq"), QA=qActiva();
+    if(S.finArm!==k){armarFin(k);return}
+    if(k==="fin"){var sg=qSig(QA);cambiarActiva(sg,"Listo: empieza "+qNombre(sg))}
+    else {var an=qAnt(QA);cambiarActiva(an,"De vuelta a "+qNombre(qCmp(an,qFecha())>0?an:qFecha()))}
+    return;
+  }
   var b=e.target.closest("[data-pq]");if(b){pensionToggle(+b.getAttribute("data-pq"));return}
   var p=e.target.closest("[data-pago]");if(p)abrirPago(+p.getAttribute("data-pago"));
 });
@@ -1381,12 +1439,12 @@ function toast(t){var x=el("toast");x.textContent=t;x.hidden=false;clearTimeout(
 
 /* ---------- navegación ---------- */
 el("vista").addEventListener("change",function(){
-  S.vista=this.value;
+  S.vista=this.value; S.navego=true;
   try{localStorage.setItem("quincena.vista",S.vista==="mes"?"mes":"")}catch(err){}
   render();
 });
-el("mPrev").onclick=function(){S.mes=mover(S.mes,-1);suscribir()};
-el("mNext").onclick=function(){S.mes=mover(S.mes,1);suscribir()};
+el("mPrev").onclick=function(){S.navego=true;S.mes=mover(S.mes,-1);suscribir()};
+el("mNext").onclick=function(){S.navego=true;S.mes=mover(S.mes,1);suscribir()};
 
 /* ---------- deslizar hacia abajo (desde arriba de la página) para actualizar ---------- */
 var PT={y0:null,x0:0,d:0}, UMBRAL=120;
